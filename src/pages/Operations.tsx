@@ -170,6 +170,8 @@ export default function Operations() {
                           )}
                         </td>
                       </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
