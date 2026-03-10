@@ -1,15 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import type { Database } from '@/integrations/supabase/types';
+
+type TableName = keyof Database['public']['Tables'];
 
 // Generic farm-scoped query hook
-function useFarmQuery<T>(key: string, table: string, extraFilter?: (q: any) => any) {
+function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) => any) {
   const { farmId } = useAuth();
   return useQuery<T[]>({
     queryKey: [key, farmId],
     queryFn: async () => {
       if (!farmId) return [];
-      let q = supabase.from(table).select('*').eq('farm_id', farmId);
+      let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId);
       if (extraFilter) q = extraFilter(q);
       const { data, error } = await q;
       if (error) throw error;
