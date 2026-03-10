@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ArrowRightLeft, Users, Receipt, UserCog, Truck } from 'lucide-react';
+import { LayoutDashboard, ArrowRightLeft, Users, Receipt, UserCog, Wallet } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { t } from '@/lib/i18n';
 
@@ -7,9 +7,9 @@ const tabs = [
   { path: '/', icon: LayoutDashboard, key: 'nav.dashboard' },
   { path: '/operations', icon: ArrowRightLeft, key: 'nav.operations' },
   { path: '/customers', icon: Users, key: 'nav.customers' },
+  { path: '/payments', icon: Wallet, key: 'nav.payments' },
   { path: '/expenses', icon: Receipt, key: 'nav.expenses' },
   { path: '/staff', icon: UserCog, key: 'nav.staff' },
-  { path: '/procurement', icon: Truck, key: 'nav.procurement' },
 ];
 
 export default function BottomNav() {

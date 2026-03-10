@@ -11,6 +11,9 @@ import Expenses from "./pages/Expenses";
 import StaffPage from "./pages/Staff";
 import StaffAttendance from "./pages/StaffAttendance";
 import ProcurementPage from "./pages/Procurement";
+import Payments from "./pages/Payments";
+import CustomerBill from "./pages/CustomerBill";
+import MonthlyReport from "./pages/MonthlyReport";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +29,9 @@ const App = () => (
               <Route path="/" element={<Dashboard />} />
               <Route path="/operations" element={<Operations />} />
               <Route path="/customers" element={<Customers />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/customers/:customerId/bill" element={<CustomerBill />} />
+              <Route path="/report" element={<MonthlyReport />} />
               <Route path="/expenses" element={<Expenses />} />
               <Route path="/staff" element={<StaffPage />} />
               <Route path="/staff/:staffId/attendance" element={<StaffAttendance />} />

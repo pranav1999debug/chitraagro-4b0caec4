@@ -1,13 +1,16 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
 import { useApp } from '@/contexts/AppContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
 import { customerStore, transactionStore, type Transaction } from '@/lib/store';
+import { MessageCircle, BarChart3 } from 'lucide-react';
 
 export default function Operations() {
   const { lang } = useApp();
+  const navigate = useNavigate();
   const today = getTodayNepali();
   const [date, setDate] = useState<NepaliDate>(today);
   const [timeGroup, setTimeGroup] = useState<'morning' | 'evening'>('morning');
@@ -56,6 +59,15 @@ export default function Operations() {
     setDate({ ...date });
   };
 
+  const handleWhatsApp = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    const tx = txMap[customerId];
+    if (!customer || !tx) return;
+    const msg = `M's ${customer.name},\n\n📦 Amount: ${tx.quantity} Ltr @ ${tx.price}\n💰 Received: Rs ${tx.mila || 0}\n\nThanks,\nCHITRA AGRO!! 🎉`;
+    const phone = customer.phone.replace(/[^0-9]/g, '');
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   return (
     <div className="pb-20">
       <AppHeader title={t('nav.operations', lang)} />
@@ -94,8 +106,11 @@ export default function Operations() {
 
         {/* Customer List Table */}
         <div className="stat-card">
-          <h3 className="font-heading text-sm font-semibold mb-3">
-            {t(`common.${timeGroup}`, lang)} {t('nav.customers', lang)}: {filteredCustomers.length}
+          <h3 className="font-heading text-sm font-semibold mb-3 flex justify-between items-center">
+            <span>{t(`common.${timeGroup}`, lang)} {t('nav.customers', lang)}: {filteredCustomers.length}</span>
+            <button onClick={() => navigate('/report')} className="text-xs text-primary flex items-center gap-1">
+              <BarChart3 size={14} /> {t('dashboard.generateReport', lang)}
+            </button>
           </h3>
 
           {filteredCustomers.length === 0 ? (
@@ -109,6 +124,7 @@ export default function Operations() {
                     <th className="data-table-header text-center py-2">{t('transaction.qty', lang)}</th>
                     <th className="data-table-header text-center py-2">{t('transaction.price', lang)}</th>
                     <th className="data-table-header text-center py-2">{t('transaction.mila', lang)}</th>
+                    <th className="data-table-header text-center py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -145,6 +161,13 @@ export default function Operations() {
                             onChange={e => handleFieldChange(customer.id, 'mila', Number(e.target.value) || 0)}
                             className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary"
                           />
+                        </td>
+                        <td className="data-table-cell text-center">
+                          {tx && tx.quantity > 0 && (
+                            <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
+                              <MessageCircle size={16} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
