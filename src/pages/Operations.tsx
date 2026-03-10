@@ -162,9 +162,14 @@ export default function Operations() {
                             className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary"
                           />
                         </td>
+                        <td className="data-table-cell text-center">
+                          {tx && tx.quantity > 0 && (
+                            <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
+                              <MessageCircle size={16} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
-                    );
-                  })}
                 </tbody>
               </table>
             </div>
