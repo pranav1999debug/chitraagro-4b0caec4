@@ -131,7 +131,7 @@ export default function Customers() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">{t('customer.timeGroup', lang)}</label>
-                <select className="input-field text-sm" value={form.timeGroup} onChange={e => setForm({ ...form, timeGroup: e.target.value as 'morning' | 'evening' | 'both' })}>
+              <select className="input-field text-sm" value={form.timeGroup} onChange={e => setForm({ ...form, timeGroup: e.target.value as typeof form.timeGroup })}>
                   <option value="morning">{t('common.morning', lang)}</option>
                   <option value="evening">{t('common.evening', lang)}</option>
                   <option value="both">{lang === 'en' ? 'Both' : 'दोनों'}</option>
