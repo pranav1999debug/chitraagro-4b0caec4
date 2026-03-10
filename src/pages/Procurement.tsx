@@ -2,55 +2,54 @@ import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
-import { procurementStore, type Procurement } from '@/lib/store';
+import { useProcurement, useProcurementMutations } from '@/hooks/useFarmData';
 import { Plus, Trash2, X } from 'lucide-react';
 
 export default function ProcurementPage() {
   const { lang } = useApp();
+  const { role } = useAuth();
   const today = getTodayNepali();
   const [filterDate, setFilterDate] = useState<NepaliDate>({ year: today.year, month: today.month, day: today.day });
   const yearMonth = `${filterDate.year}-${String(filterDate.month).padStart(2, '0')}`;
 
-  const [items, setItems] = useState(procurementStore.getByMonth(yearMonth));
+  const { data: items = [] } = useProcurement(yearMonth);
+  const { add, remove } = useProcurementMutations();
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ supplierName: '', quantity: 0, rate: 0, date: today });
+  const [form, setForm] = useState({ supplier_name: '', quantity: 0, rate: 0, date: today });
 
-  const refresh = () => setItems(procurementStore.getByMonth(yearMonth));
-
-  const handleDateChange = (d: NepaliDate) => {
-    setFilterDate(d);
-    const ym = `${d.year}-${String(d.month).padStart(2, '0')}`;
-    setItems(procurementStore.getByMonth(ym));
-  };
+  const canEdit = role === 'owner' || role === 'manager';
+  const canDelete = role === 'owner';
 
   const handleSave = () => {
-    if (!form.supplierName.trim() || !form.quantity) return;
-    procurementStore.add({
-      supplierName: form.supplierName,
+    if (!form.supplier_name.trim() || !form.quantity) return;
+    add.mutate({
+      supplier_name: form.supplier_name,
       quantity: form.quantity,
       rate: form.rate,
       total: form.quantity * form.rate,
-      dateKey: nepaliDateToKey(form.date),
+      date_key: nepaliDateToKey(form.date),
     });
     setShowModal(false);
-    setForm({ supplierName: '', quantity: 0, rate: 0, date: today });
-    refresh();
+    setForm({ supplier_name: '', quantity: 0, rate: 0, date: today });
   };
 
-  const totalQty = items.reduce((s, p) => s + p.quantity, 0);
-  const totalAmount = items.reduce((s, p) => s + p.total, 0);
+  const totalQty = items.reduce((s, p) => s + Number(p.quantity), 0);
+  const totalAmount = items.reduce((s, p) => s + Number(p.total), 0);
 
   return (
     <div className="pb-20">
       <AppHeader title={t('nav.procurement', lang)} />
       <div className="p-4 space-y-4">
-        <button onClick={() => setShowModal(true)} className="action-button w-full flex items-center justify-center gap-2">
-          <Plus size={18} /> {t('procurement.addProcurement', lang)}
-        </button>
+        {canEdit && (
+          <button onClick={() => setShowModal(true)} className="action-button w-full flex items-center justify-center gap-2">
+            <Plus size={18} /> {t('procurement.addProcurement', lang)}
+          </button>
+        )}
 
-        <NepaliDatePicker date={filterDate} onChange={handleDateChange} showDay={false} />
+        <NepaliDatePicker date={filterDate} onChange={setFilterDate} showDay={false} />
 
         <div className="stat-card flex justify-between">
           <div>
@@ -69,14 +68,12 @@ export default function ProcurementPage() {
           items.map(p => (
             <div key={p.id} className="stat-card flex items-center justify-between">
               <div>
-                <p className="font-heading font-semibold text-sm">{p.supplierName}</p>
-                <p className="text-[10px] text-muted-foreground">{p.quantity}L × ₹{p.rate} · {p.dateKey}</p>
+                <p className="font-heading font-semibold text-sm">{p.supplier_name}</p>
+                <p className="text-[10px] text-muted-foreground">{p.quantity}L × ₹{p.rate} · {p.date_key}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-number font-bold">₹{p.total}</span>
-                <button onClick={() => { procurementStore.delete(p.id); refresh(); }} className="p-1 text-destructive">
-                  <Trash2 size={14} />
-                </button>
+                {canDelete && <button onClick={() => remove.mutate(p.id)} className="p-1 text-destructive"><Trash2 size={14} /></button>}
               </div>
             </div>
           ))
@@ -93,7 +90,7 @@ export default function ProcurementPage() {
             </div>
             <div className="space-y-3">
               <NepaliDatePicker date={form.date} onChange={d => setForm({ ...form, date: d })} showDay />
-              <input className="input-field" placeholder={t('procurement.supplier', lang)} value={form.supplierName} onChange={e => setForm({ ...form, supplierName: e.target.value })} />
+              <input className="input-field" placeholder={t('procurement.supplier', lang)} value={form.supplier_name} onChange={e => setForm({ ...form, supplier_name: e.target.value })} />
               <div>
                 <label className="text-xs text-muted-foreground">{t('procurement.quantity', lang)}</label>
                 <input className="input-field font-number" type="number" inputMode="decimal" value={form.quantity || ''} onChange={e => setForm({ ...form, quantity: Number(e.target.value) || 0 })} />
