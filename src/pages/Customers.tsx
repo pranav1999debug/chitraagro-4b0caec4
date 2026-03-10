@@ -139,7 +139,7 @@ export default function Customers() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground">{t('customer.milkType', lang)}</label>
-                <select className="input-field text-sm" value={form.milkType} onChange={e => setForm({ ...form, milkType: e.target.value as 'cow' | 'buffalo' | 'mixed' })}>
+              <select className="input-field text-sm" value={form.milkType} onChange={e => setForm({ ...form, milkType: e.target.value as typeof form.milkType })}>
                   <option value="cow">{t('customer.cow', lang)}</option>
                   <option value="buffalo">{t('customer.buffalo', lang)}</option>
                   <option value="mixed">{t('customer.mixed', lang)}</option>

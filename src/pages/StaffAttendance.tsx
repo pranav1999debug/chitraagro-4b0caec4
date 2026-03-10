@@ -15,18 +15,20 @@ export default function StaffAttendance() {
   const today = getTodayNepali();
   const [filterDate, setFilterDate] = useState<NepaliDate>({ year: today.year, month: today.month, day: today.day });
 
-  const staff = staffStore.getAll().find(s => s.id === staffId);
-  if (!staff) return <div className="p-4">Staff not found</div>;
+  const allStaff = staffStore.getAll();
+  const staff = allStaff.find(s => s.id === staffId);
 
   const yearMonth = `${filterDate.year}-${String(filterDate.month).padStart(2, '0')}`;
   const daysInMonth = getDaysInMonth(filterDate.year, filterDate.month);
+  const attendance = attendanceStore.getByStaffMonth(staffId || '', yearMonth);
 
-  const attendance = attendanceStore.getByStaffMonth(staffId!, yearMonth);
   const attMap = useMemo(() => {
     const m: Record<string, { present: boolean; advanceAmount: number }> = {};
     attendance.forEach(a => { m[a.dateKey] = { present: a.present, advanceAmount: a.advanceAmount }; });
     return m;
   }, [attendance]);
+
+  if (!staff) return <div className="p-4">Staff not found</div>;
 
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
@@ -42,7 +44,7 @@ export default function StaffAttendance() {
 
   const togglePresent = (dateKey: string, current: boolean) => {
     attendanceStore.upsert({ staffId: staffId!, dateKey, present: !current, advanceAmount: attMap[dateKey]?.advanceAmount || 0 });
-    setFilterDate({ ...filterDate }); // force re-render
+    setFilterDate({ ...filterDate });
   };
 
   const setAdvance = (dateKey: string, amount: number) => {
@@ -60,7 +62,6 @@ export default function StaffAttendance() {
 
         <NepaliDatePicker date={filterDate} onChange={setFilterDate} showDay={false} />
 
-        {/* Summary */}
         <div className="stat-card grid grid-cols-2 gap-2 text-xs font-body">
           <div>{t('staff.present', lang)}: <span className="font-number font-bold">{presentDays}</span></div>
           <div>{t('staff.salary', lang)}: <span className="font-number font-bold">₹{totalSalary}</span></div>
@@ -68,7 +69,6 @@ export default function StaffAttendance() {
           <div>{lang === 'en' ? 'Payable' : 'देय'}: <span className={`font-number font-bold ${finalPayable >= 0 ? 'text-primary' : 'text-destructive'}`}>₹{finalPayable}</span></div>
         </div>
 
-        {/* Attendance Table */}
         <div className="stat-card overflow-x-auto -mx-4 px-4">
           <table className="w-full text-sm">
             <thead>
