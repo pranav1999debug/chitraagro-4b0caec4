@@ -100,6 +100,7 @@ const translations: Record<string, Record<Language, string>> = {
   'report.dailySales': { en: 'Daily Sales', hi: 'दैनिक बिक्री' },
   'report.downloadReport': { en: 'Download Report', hi: 'रिपोर्ट डाउनलोड करें' },
   'transaction.sendWhatsApp': { en: 'Send WhatsApp', hi: 'WhatsApp भेजें' },
+  'nav.settings': { en: 'Settings', hi: 'सेटिंग्स' },
 };
 
 export function t(key: string, lang: Language): string {

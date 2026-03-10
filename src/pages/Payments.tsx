@@ -2,42 +2,45 @@ import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
-import { customerStore, transactionStore, paymentStore, type Customer } from '@/lib/store';
-import { Search, Plus, X, FileText, MessageCircle } from 'lucide-react';
+import { useCustomers, useAllTransactions, usePayments, usePaymentMutations, type DbCustomer } from '@/hooks/useFarmData';
+import { Search, Plus, X, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function Payments() {
   const { lang } = useApp();
+  const { role } = useAuth();
   const navigate = useNavigate();
-  const [customers] = useState(customerStore.getAll());
+  const { data: customers = [] } = useCustomers();
+  const { data: allTx = [] } = useAllTransactions();
+  const { data: allPayments = [] } = usePayments();
+  const { add } = usePaymentMutations();
   const [search, setSearch] = useState('');
   const [showPayModal, setShowPayModal] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<DbCustomer | null>(null);
   const [payDate, setPayDate] = useState<NepaliDate>(getTodayNepali());
   const [payAmount, setPayAmount] = useState(0);
   const [payNotes, setPayNotes] = useState('');
-  const [, setRefresh] = useState(0);
 
-  const allTx = transactionStore.getAll();
-  const allPayments = paymentStore.getAll();
+  const canEdit = role === 'owner' || role === 'manager';
 
-  const getBalance = (c: Customer) => {
-    const txTotal = allTx.filter(tx => tx.customerId === c.id).reduce((s, tx) => s + tx.total, 0);
-    const payTotal = allPayments.filter(p => p.customerId === c.id).reduce((s, p) => s + p.amount, 0);
-    return c.openingBalance + txTotal - payTotal;
+  const getBalance = (c: DbCustomer) => {
+    const txTotal = allTx.filter(tx => tx.customer_id === c.id).reduce((s, tx) => s + Number(tx.total), 0);
+    const payTotal = allPayments.filter(p => p.customer_id === c.id).reduce((s, p) => s + Number(p.amount), 0);
+    return Number(c.opening_balance) + txTotal - payTotal;
   };
 
   const filtered = customers.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search)
+    c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone || '').includes(search)
   );
 
   const handleAddPayment = () => {
     if (!selectedCustomer || payAmount <= 0) return;
-    paymentStore.add({
-      customerId: selectedCustomer.id,
-      dateKey: nepaliDateToKey(payDate),
+    add.mutate({
+      customer_id: selectedCustomer.id,
+      date_key: nepaliDateToKey(payDate),
       amount: payAmount,
       notes: payNotes,
     });
@@ -45,10 +48,9 @@ export default function Payments() {
     setPayAmount(0);
     setPayNotes('');
     setSelectedCustomer(null);
-    setRefresh(r => r + 1);
   };
 
-  const openPay = (c: Customer) => {
+  const openPay = (c: DbCustomer) => {
     setSelectedCustomer(c);
     setPayDate(getTodayNepali());
     setPayAmount(0);
@@ -62,13 +64,7 @@ export default function Payments() {
       <div className="p-4 space-y-3">
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder={t('common.search', lang)}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input-field pl-9 text-sm"
-          />
+          <input type="text" placeholder={t('common.search', lang)} value={search} onChange={e => setSearch(e.target.value)} className="input-field pl-9 text-sm" />
         </div>
 
         {filtered.map(c => {
@@ -89,9 +85,11 @@ export default function Payments() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => openPay(c)} className="flex-1 action-button text-xs py-2 flex items-center justify-center gap-1">
-                  <Plus size={14} /> {t('bill.addPayment', lang)}
-                </button>
+                {canEdit && (
+                  <button onClick={() => openPay(c)} className="flex-1 action-button text-xs py-2 flex items-center justify-center gap-1">
+                    <Plus size={14} /> {t('bill.addPayment', lang)}
+                  </button>
+                )}
                 <button onClick={() => navigate(`/customers/${c.id}/bill`)} className="flex-1 stat-card text-xs py-2 flex items-center justify-center gap-1 font-heading font-semibold">
                   <FileText size={14} /> {t('bill.viewBill', lang)}
                 </button>
@@ -101,7 +99,6 @@ export default function Payments() {
         })}
       </div>
 
-      {/* Payment Modal */}
       {showPayModal && selectedCustomer && (
         <>
           <div className="modal-overlay" onClick={() => setShowPayModal(false)} />
