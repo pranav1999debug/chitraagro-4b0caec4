@@ -125,7 +125,7 @@ export default function Operations() {
                     <th className="data-table-header text-center py-2">{t('transaction.qty', lang)}</th>
                     <th className="data-table-header text-center py-2">{t('transaction.price', lang)}</th>
                     <th className="data-table-header text-center py-2">{t('transaction.mila', lang)}</th>
-                  </tr>
+                    <th className="data-table-header text-center py-2"></th>
                 </thead>
                 <tbody>
                   {filteredCustomers.map(customer => {
