@@ -59,6 +59,15 @@ export default function Operations() {
     setDate({ ...date });
   };
 
+  const handleWhatsApp = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    const tx = txMap[customerId];
+    if (!customer || !tx) return;
+    const msg = `M's ${customer.name},\n\n📦 Amount: ${tx.quantity} Ltr @ ${tx.price}\n💰 Received: Rs ${tx.mila || 0}\n\nThanks,\nCHITRA AGRO!! 🎉`;
+    const phone = customer.phone.replace(/[^0-9]/g, '');
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   return (
     <div className="pb-20">
       <AppHeader title={t('nav.operations', lang)} />
