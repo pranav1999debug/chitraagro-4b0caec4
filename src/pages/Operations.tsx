@@ -112,7 +112,6 @@ export default function Operations() {
               <BarChart3 size={14} /> {t('dashboard.generateReport', lang)}
             </button>
           </h3>
-          </h3>
 
           {filteredCustomers.length === 0 ? (
             <p className="text-center text-muted-foreground text-sm py-8">{t('common.noData', lang)}</p>
@@ -126,6 +125,7 @@ export default function Operations() {
                     <th className="data-table-header text-center py-2">{t('transaction.price', lang)}</th>
                     <th className="data-table-header text-center py-2">{t('transaction.mila', lang)}</th>
                     <th className="data-table-header text-center py-2"></th>
+                  </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.map(customer => {
