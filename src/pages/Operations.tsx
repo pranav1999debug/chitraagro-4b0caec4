@@ -106,8 +106,12 @@ export default function Operations() {
 
         {/* Customer List Table */}
         <div className="stat-card">
-          <h3 className="font-heading text-sm font-semibold mb-3">
-            {t(`common.${timeGroup}`, lang)} {t('nav.customers', lang)}: {filteredCustomers.length}
+          <h3 className="font-heading text-sm font-semibold mb-3 flex justify-between items-center">
+            <span>{t(`common.${timeGroup}`, lang)} {t('nav.customers', lang)}: {filteredCustomers.length}</span>
+            <button onClick={() => navigate('/report')} className="text-xs text-primary flex items-center gap-1">
+              <BarChart3 size={14} /> {t('dashboard.generateReport', lang)}
+            </button>
+          </h3>
           </h3>
 
           {filteredCustomers.length === 0 ? (
