@@ -14,16 +14,501 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      attendance: {
+        Row: {
+          advance_amount: number
+          created_at: string
+          date_key: string
+          farm_id: string
+          id: string
+          present: boolean
+          staff_id: string
+        }
+        Insert: {
+          advance_amount?: number
+          created_at?: string
+          date_key: string
+          farm_id: string
+          id?: string
+          present?: boolean
+          staff_id: string
+        }
+        Update: {
+          advance_amount?: number
+          created_at?: string
+          date_key?: string
+          farm_id?: string
+          id?: string
+          present?: boolean
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          address: string | null
+          created_at: string
+          farm_id: string
+          id: string
+          milk_type: string
+          name: string
+          opening_balance: number
+          phone: string | null
+          purchase_rate: number
+          time_group: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          farm_id: string
+          id?: string
+          milk_type?: string
+          name: string
+          opening_balance?: number
+          phone?: string | null
+          purchase_rate?: number
+          time_group?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          farm_id?: string
+          id?: string
+          milk_type?: string
+          name?: string
+          opening_balance?: number
+          phone?: string | null
+          purchase_rate?: number
+          time_group?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          date_key: string
+          farm_id: string
+          id: string
+          notes: string | null
+          sub_category: string | null
+          updated_at: string
+        }
+        Insert: {
+          amount?: number
+          category: string
+          created_at?: string
+          date_key: string
+          farm_id: string
+          id?: string
+          notes?: string | null
+          sub_category?: string | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          date_key?: string
+          farm_id?: string
+          id?: string
+          notes?: string | null
+          sub_category?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      farm_invites: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          farm_id: string
+          id: string
+          invite_code: string
+          max_uses: number | null
+          role: Database["public"]["Enums"]["app_role"]
+          used_count: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          farm_id: string
+          id?: string
+          invite_code?: string
+          max_uses?: number | null
+          role?: Database["public"]["Enums"]["app_role"]
+          used_count?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          farm_id?: string
+          id?: string
+          invite_code?: string
+          max_uses?: number | null
+          role?: Database["public"]["Enums"]["app_role"]
+          used_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "farm_invites_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      farm_members: {
+        Row: {
+          created_at: string
+          farm_id: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          farm_id: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          farm_id?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "farm_members_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      farms: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          owner_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          customer_id: string
+          date_key: string
+          farm_id: string
+          id: string
+          notes: string | null
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          customer_id: string
+          date_key: string
+          farm_id: string
+          id?: string
+          notes?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          customer_id?: string
+          date_key?: string
+          farm_id?: string
+          id?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      procurement: {
+        Row: {
+          created_at: string
+          date_key: string
+          farm_id: string
+          id: string
+          quantity: number
+          rate: number
+          supplier_name: string
+          total: number
+        }
+        Insert: {
+          created_at?: string
+          date_key: string
+          farm_id: string
+          id?: string
+          quantity?: number
+          rate?: number
+          supplier_name: string
+          total?: number
+        }
+        Update: {
+          created_at?: string
+          date_key?: string
+          farm_id?: string
+          id?: string
+          quantity?: number
+          rate?: number
+          supplier_name?: string
+          total?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "procurement_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          active_farm_id: string | null
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          active_farm_id?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          active_farm_id?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_active_farm_id_fkey"
+            columns: ["active_farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff: {
+        Row: {
+          advance: number
+          created_at: string
+          email: string | null
+          farm_id: string
+          id: string
+          join_date: string | null
+          name: string
+          phone: string | null
+          position: string | null
+          salary: number
+          updated_at: string
+        }
+        Insert: {
+          advance?: number
+          created_at?: string
+          email?: string | null
+          farm_id: string
+          id?: string
+          join_date?: string | null
+          name: string
+          phone?: string | null
+          position?: string | null
+          salary?: number
+          updated_at?: string
+        }
+        Update: {
+          advance?: number
+          created_at?: string
+          email?: string | null
+          farm_id?: string
+          id?: string
+          join_date?: string | null
+          name?: string
+          phone?: string | null
+          position?: string | null
+          salary?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          created_at: string
+          customer_id: string
+          date_key: string
+          farm_id: string
+          id: string
+          mila: number
+          price: number
+          quantity: number
+          time_group: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          date_key: string
+          farm_id: string
+          id?: string
+          mila?: number
+          price?: number
+          quantity?: number
+          time_group: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          date_key?: string
+          farm_id?: string
+          id?: string
+          mila?: number
+          price?: number
+          quantity?: number
+          time_group?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_farm_role: {
+        Args: { _farm_id: string; _user_id: string }
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_farm_role: {
+        Args: {
+          _farm_id: string
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_farm_member: {
+        Args: { _farm_id: string; _user_id: string }
+        Returns: boolean
+      }
+      join_farm_by_invite: { Args: { _invite_code: string }; Returns: Json }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "owner" | "manager" | "staff"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +635,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["owner", "manager", "staff"],
+    },
   },
 } as const
