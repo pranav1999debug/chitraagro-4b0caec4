@@ -10,6 +10,7 @@ import { MessageCircle, BarChart3 } from 'lucide-react';
 
 export default function Operations() {
   const { lang } = useApp();
+  const navigate = useNavigate();
   const today = getTodayNepali();
   const [date, setDate] = useState<NepaliDate>(today);
   const [timeGroup, setTimeGroup] = useState<'morning' | 'evening'>('morning');
