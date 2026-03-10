@@ -17,7 +17,6 @@ export default function CustomerBill() {
   const [month, setMonth] = useState(today.month);
 
   const customer = customerStore.getAll().find(c => c.id === customerId);
-  if (!customer) return <div className="p-4 text-center text-muted-foreground">Customer not found</div>;
 
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = getDaysInMonth(year, month);
@@ -26,6 +25,7 @@ export default function CustomerBill() {
   const allPayments = paymentStore.getAll();
 
   const dailyRecords = useMemo(() => {
+    if (!customer) return [];
     const records: { day: number; dateKey: string; liters: number; rate: number; amount: number }[] = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dateKey = `${yearMonth}-${String(d).padStart(2, '0')}`;
