@@ -5,9 +5,9 @@ import { t } from '@/lib/i18n';
 import { customerStore, type Customer } from '@/lib/store';
 import { Search, Plus, Trash2, Edit, X } from 'lucide-react';
 
-const emptyCustomer = {
+const emptyCustomer: { name: string; phone: string; address: string; purchaseRate: number; openingBalance: number; timeGroup: 'morning' | 'evening' | 'both'; milkType: 'cow' | 'buffalo' | 'mixed' } = {
   name: '', phone: '', address: '', purchaseRate: 0, openingBalance: 0,
-  timeGroup: 'morning' as const, milkType: 'cow' as const,
+  timeGroup: 'morning', milkType: 'cow',
 };
 
 export default function Customers() {
