@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
 import { useApp } from '@/contexts/AppContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
 import { customerStore, transactionStore, type Transaction } from '@/lib/store';
+import { MessageCircle, BarChart3 } from 'lucide-react';
 
 export default function Operations() {
   const { lang } = useApp();
