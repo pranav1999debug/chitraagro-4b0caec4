@@ -1,54 +1,54 @@
 import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
-import { staffStore, type Staff } from '@/lib/store';
+import { useStaff, useStaffMutations, type DbStaff } from '@/hooks/useFarmData';
 import { Plus, Trash2, Edit, X, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const emptyStaff = { name: '', position: '', phone: '', email: '', salary: 0, advance: 0, joinDate: '' };
+const emptyStaff = { name: '', position: '' as string | null, phone: '' as string | null, email: '' as string | null, salary: 0, advance: 0, join_date: '' as string | null };
 
 export default function StaffPage() {
   const { lang } = useApp();
+  const { role } = useAuth();
   const navigate = useNavigate();
-  const [staffList, setStaffList] = useState(staffStore.getAll());
+  const { data: staffList = [] } = useStaff();
+  const { add, update, remove } = useStaffMutations();
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyStaff);
 
-  const refresh = () => setStaffList(staffStore.getAll());
+  const canEdit = role === 'owner' || role === 'manager';
+  const canDelete = role === 'owner';
 
   const handleSave = () => {
     if (!form.name.trim()) return;
     if (editId) {
-      staffStore.update(editId, form);
+      update.mutate({ id: editId, ...form });
     } else {
-      staffStore.add(form);
+      add.mutate(form);
     }
     setShowModal(false);
     setEditId(null);
     setForm(emptyStaff);
-    refresh();
   };
 
-  const handleEdit = (s: Staff) => {
+  const handleEdit = (s: DbStaff) => {
     setEditId(s.id);
-    setForm({ name: s.name, position: s.position, phone: s.phone, email: s.email, salary: s.salary, advance: s.advance, joinDate: s.joinDate });
+    setForm({ name: s.name, position: s.position, phone: s.phone, email: s.email, salary: s.salary, advance: s.advance, join_date: s.join_date });
     setShowModal(true);
-  };
-
-  const handleDelete = (id: string) => {
-    staffStore.delete(id);
-    refresh();
   };
 
   return (
     <div className="pb-20">
       <AppHeader title={t('nav.staff', lang)} />
       <div className="p-4 space-y-3">
-        <button onClick={() => { setEditId(null); setForm(emptyStaff); setShowModal(true); }} className="action-button w-full flex items-center justify-center gap-2">
-          <Plus size={18} /> {t('staff.addStaff', lang)}
-        </button>
+        {canEdit && (
+          <button onClick={() => { setEditId(null); setForm(emptyStaff); setShowModal(true); }} className="action-button w-full flex items-center justify-center gap-2">
+            <Plus size={18} /> {t('staff.addStaff', lang)}
+          </button>
+        )}
 
         {staffList.length === 0 ? (
           <p className="text-center text-muted-foreground text-sm py-12">{t('common.noData', lang)}</p>
@@ -65,8 +65,8 @@ export default function StaffPage() {
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => navigate(`/staff/${s.id}/attendance`)} className="p-2 text-primary"><ClipboardList size={16} /></button>
-                  <button onClick={() => handleEdit(s)} className="p-2 text-stone"><Edit size={16} /></button>
-                  <button onClick={() => handleDelete(s.id)} className="p-2 text-destructive"><Trash2 size={16} /></button>
+                  {canEdit && <button onClick={() => handleEdit(s)} className="p-2 text-stone"><Edit size={16} /></button>}
+                  {canDelete && <button onClick={() => remove.mutate(s.id)} className="p-2 text-destructive"><Trash2 size={16} /></button>}
                 </div>
               </div>
               <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
@@ -88,9 +88,9 @@ export default function StaffPage() {
             </div>
             <div className="space-y-3">
               <input className="input-field" placeholder={t('common.name', lang)} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-              <input className="input-field" placeholder={t('staff.position', lang)} value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} />
-              <input className="input-field" placeholder={t('common.phone', lang)} inputMode="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-              <input className="input-field" placeholder="Email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+              <input className="input-field" placeholder={t('staff.position', lang)} value={form.position || ''} onChange={e => setForm({ ...form, position: e.target.value })} />
+              <input className="input-field" placeholder={t('common.phone', lang)} inputMode="tel" value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
+              <input className="input-field" placeholder="Email" type="email" value={form.email || ''} onChange={e => setForm({ ...form, email: e.target.value })} />
               <div>
                 <label className="text-xs text-muted-foreground">{t('staff.salary', lang)}</label>
                 <input className="input-field font-number" type="number" inputMode="numeric" value={form.salary || ''} onChange={e => setForm({ ...form, salary: Number(e.target.value) || 0 })} />
