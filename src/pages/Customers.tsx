@@ -43,7 +43,7 @@ export default function Customers() {
 
   const handleEdit = (c: Customer) => {
     setEditId(c.id);
-    setForm({ name: c.name, phone: c.phone, address: c.address, purchaseRate: c.purchaseRate, openingBalance: c.openingBalance, timeGroup: c.timeGroup, milkType: c.milkType });
+    setForm({ name: c.name, phone: c.phone, address: c.address, purchaseRate: c.purchaseRate, openingBalance: c.openingBalance, timeGroup: c.timeGroup as 'morning' | 'evening' | 'both', milkType: c.milkType as 'cow' | 'buffalo' | 'mixed' });
     setShowModal(true);
   };
 
