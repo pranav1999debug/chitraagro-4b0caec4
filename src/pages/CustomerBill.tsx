@@ -41,8 +41,11 @@ export default function CustomerBill() {
   }, [allTransactions, customerId, yearMonth, daysInMonth]);
 
   const monthPayments = useMemo(() => {
+    if (!customer) return [];
     return allPayments.filter(p => p.customerId === customerId && p.dateKey.startsWith(yearMonth));
-  }, [allPayments, customerId, yearMonth]);
+  }, [allPayments, customerId, yearMonth, customer]);
+
+  if (!customer) return <div className="p-4 text-center text-muted-foreground">Customer not found</div>;
 
   const totalLiters = dailyRecords.reduce((s, r) => s + r.liters, 0);
   const totalAmount = dailyRecords.reduce((s, r) => s + r.amount, 0);
