@@ -160,6 +160,7 @@ export function useTransactionMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...t }: { id: string } & Partial<DbTransaction>) => {
+      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'update', data: { id, ...t } }); return; }
       const { error } = await supabase.from('transactions').update(t).eq('id', id);
       if (error) throw error;
     },
