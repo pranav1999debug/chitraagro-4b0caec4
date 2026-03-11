@@ -146,7 +146,9 @@ export function useTransactionMutations() {
 
   const add = useMutation({
     mutationFn: async (t: Omit<DbTransaction, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const { data, error } = await supabase.from('transactions').insert({ ...t, farm_id: farmId! }).select().single();
+      const payload = { ...t, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'insert', data: payload }); return null; }
+      const { data, error } = await supabase.from('transactions').insert(payload).select().single();
       if (error) throw error;
       return data;
     },
