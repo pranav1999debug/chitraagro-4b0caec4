@@ -67,6 +67,7 @@ const AppRoutes = () => (
 
 function AuthBottomNav() {
   const { user } = useAuth();
+  useOfflineSync();
   if (!user) return null;
   return <BottomNav />;
 }
