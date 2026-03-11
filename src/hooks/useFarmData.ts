@@ -67,7 +67,9 @@ export function useCustomerMutations() {
 
   const add = useMutation({
     mutationFn: async (c: Omit<DbCustomer, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const { error } = await supabase.from('customers').insert({ ...c, farm_id: farmId! });
+      const payload = { ...c, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'insert', data: payload }); return; }
+      const { error } = await supabase.from('customers').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
