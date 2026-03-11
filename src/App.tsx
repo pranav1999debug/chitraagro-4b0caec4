@@ -19,6 +19,7 @@ import Settings from "./pages/Settings";
 import Login from "./pages/Login";
 import JoinFarm from "./pages/JoinFarm";
 import NotFound from "./pages/NotFound";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 
 const queryClient = new QueryClient();
 
