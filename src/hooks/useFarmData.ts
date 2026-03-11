@@ -2,23 +2,43 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Database } from '@/integrations/supabase/types';
+import { getCachedData, setCachedData, isOnline } from '@/hooks/useOfflineCache';
 
 type TableName = keyof Database['public']['Tables'];
 
-// Generic farm-scoped query hook
+// Generic farm-scoped query hook with offline caching
 function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) => any) {
   const { farmId } = useAuth();
+  const cacheKey = `${key}_${farmId}`;
+
   return useQuery<T[]>({
     queryKey: [key, farmId],
     queryFn: async () => {
       if (!farmId) return [];
+
+      // If offline, return cached data
+      if (!isOnline()) {
+        const cached = getCachedData<T>(cacheKey);
+        return cached || [];
+      }
+
       let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId);
       if (extraFilter) q = extraFilter(q);
       const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as T[];
+
+      const result = (data || []) as T[];
+      // Cache the result
+      setCachedData(cacheKey, result);
+      return result;
     },
     enabled: !!farmId,
+    // Serve stale cache while refetching
+    placeholderData: () => {
+      if (!farmId) return undefined;
+      const cached = getCachedData<T>(cacheKey);
+      return cached || undefined;
+    },
   });
 }
 
@@ -88,9 +108,30 @@ export interface DbTransaction {
 }
 
 export function useTransactions(dateKey?: string) {
-  return useFarmQuery<DbTransaction>('transactions', 'transactions',
-    dateKey ? (q: any) => q.eq('date_key', dateKey) : undefined
-  );
+  const { farmId } = useAuth();
+  const cacheKey = `transactions_${farmId}_${dateKey}`;
+
+  return useQuery<DbTransaction[]>({
+    queryKey: ['transactions', farmId, dateKey],
+    queryFn: async () => {
+      if (!farmId) return [];
+      if (!isOnline()) {
+        return getCachedData<DbTransaction>(cacheKey) || [];
+      }
+      let q = supabase.from('transactions').select('*').eq('farm_id', farmId);
+      if (dateKey) q = q.eq('date_key', dateKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const result = (data || []) as DbTransaction[];
+      setCachedData(cacheKey, result);
+      return result;
+    },
+    enabled: !!farmId,
+    placeholderData: () => {
+      if (!farmId) return undefined;
+      return getCachedData<DbTransaction>(cacheKey) || undefined;
+    },
+  });
 }
 
 export function useAllTransactions() {
@@ -231,10 +272,15 @@ export interface DbAttendance {
 
 export function useAttendance(staffId: string, yearMonth: string) {
   const { farmId } = useAuth();
+  const cacheKey = `attendance_${farmId}_${staffId}_${yearMonth}`;
+
   return useQuery<DbAttendance[]>({
     queryKey: ['attendance', farmId, staffId, yearMonth],
     queryFn: async () => {
       if (!farmId) return [];
+      if (!isOnline()) {
+        return getCachedData<DbAttendance>(cacheKey) || [];
+      }
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
@@ -242,9 +288,15 @@ export function useAttendance(staffId: string, yearMonth: string) {
         .eq('staff_id', staffId)
         .like('date_key', `${yearMonth}%`);
       if (error) throw error;
-      return (data || []) as DbAttendance[];
+      const result = (data || []) as DbAttendance[];
+      setCachedData(cacheKey, result);
+      return result;
     },
     enabled: !!farmId && !!staffId,
+    placeholderData: () => {
+      if (!farmId) return undefined;
+      return getCachedData<DbAttendance>(cacheKey) || undefined;
+    },
   });
 }
 
@@ -258,7 +310,6 @@ export function useAttendanceMutations() {
 
   const upsert = useMutation({
     mutationFn: async (a: { staff_id: string; date_key: string; present: boolean; advance_amount: number }) => {
-      // Try to find existing
       const { data: existing } = await supabase
         .from('attendance')
         .select('id')
