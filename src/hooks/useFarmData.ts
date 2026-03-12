@@ -15,25 +15,19 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
     queryKey: [key, farmId],
     queryFn: async () => {
       if (!farmId) return [];
-
-      // If offline, return cached data
       if (!isOnline()) {
         const cached = getCachedData<T>(cacheKey);
         return cached || [];
       }
-
       let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId);
       if (extraFilter) q = extraFilter(q);
       const { data, error } = await q;
       if (error) throw error;
-
       const result = (data || []) as T[];
-      // Cache the result
       setCachedData(cacheKey, result);
       return result;
     },
     enabled: !!farmId,
-    // Serve stale cache while refetching
     placeholderData: () => {
       if (!farmId) return undefined;
       const cached = getCachedData<T>(cacheKey);
@@ -53,6 +47,9 @@ export interface DbCustomer {
   opening_balance: number;
   time_group: string;
   milk_type: string;
+  is_active: boolean;
+  default_qty_morning: number;
+  default_qty_evening: number;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +74,7 @@ export function useCustomerMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...c }: { id: string } & Partial<DbCustomer>) => {
+      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'update', data: { id, ...c } }); return; }
       const { error } = await supabase.from('customers').update(c).eq('id', id);
       if (error) throw error;
     },
@@ -85,6 +83,7 @@ export function useCustomerMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('customers').delete().eq('id', id);
       if (error) throw error;
     },
@@ -172,6 +171,7 @@ export function useTransactionMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('transactions').delete().eq('id', id);
       if (error) throw error;
     },
@@ -205,13 +205,24 @@ export function usePaymentMutations() {
 
   const add = useMutation({
     mutationFn: async (p: Omit<DbPayment, 'id' | 'farm_id' | 'created_at'>) => {
-      const { error } = await supabase.from('payments').insert({ ...p, farm_id: farmId! });
+      const payload = { ...p, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'insert', data: payload }); return; }
+      const { error } = await supabase.from('payments').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['payments'] }),
   });
 
-  return { add };
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'delete', data: { id } }); return; }
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['payments'] }),
+  });
+
+  return { add, remove };
 }
 
 // ==================== STAFF ====================
@@ -239,7 +250,9 @@ export function useStaffMutations() {
 
   const add = useMutation({
     mutationFn: async (s: Omit<DbStaff, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const { error } = await supabase.from('staff').insert({ ...s, farm_id: farmId! });
+      const payload = { ...s, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'insert', data: payload }); return; }
+      const { error } = await supabase.from('staff').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
@@ -247,6 +260,7 @@ export function useStaffMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...s }: { id: string } & Partial<DbStaff>) => {
+      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'update', data: { id, ...s } }); return; }
       const { error } = await supabase.from('staff').update(s).eq('id', id);
       if (error) throw error;
     },
@@ -255,6 +269,7 @@ export function useStaffMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('staff').delete().eq('id', id);
       if (error) throw error;
     },
@@ -371,7 +386,9 @@ export function useExpenseMutations() {
 
   const add = useMutation({
     mutationFn: async (e: Omit<DbExpense, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const { error } = await supabase.from('expenses').insert({ ...e, farm_id: farmId! });
+      const payload = { ...e, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'insert', data: payload }); return; }
+      const { error } = await supabase.from('expenses').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -382,6 +399,7 @@ export function useExpenseMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
     },
@@ -422,7 +440,9 @@ export function useProcurementMutations() {
 
   const add = useMutation({
     mutationFn: async (p: Omit<DbProcurement, 'id' | 'farm_id' | 'created_at'>) => {
-      const { error } = await supabase.from('procurement').insert({ ...p, farm_id: farmId! });
+      const payload = { ...p, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'insert', data: payload }); return; }
+      const { error } = await supabase.from('procurement').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -433,6 +453,7 @@ export function useProcurementMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('procurement').delete().eq('id', id);
       if (error) throw error;
     },

@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
 import { useExpenses, useExpenseMutations, type DbExpense } from '@/hooks/useFarmData';
 import { Plus, Trash2, X } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 const CATEGORIES = ['Food', 'Medicine', 'Maintenance', 'Fuel', 'Other'];
 
@@ -21,6 +23,7 @@ export default function Expenses() {
   const { add, remove } = useExpenseMutations();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ category: CATEGORIES[0], sub_category: '' as string | null, amount: 0, notes: '' as string | null, date: today });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const canEdit = role === 'owner' || role === 'manager';
   const canDelete = role === 'owner';
@@ -34,8 +37,17 @@ export default function Expenses() {
       notes: form.notes,
       date_key: nepaliDateToKey(form.date),
     });
+    toast({ title: '✅ Added', description: `₹${form.amount} expense recorded` });
     setShowModal(false);
     setForm({ category: CATEGORIES[0], sub_category: '', amount: 0, notes: '', date: today });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      remove.mutate(deleteConfirm);
+      toast({ title: '🗑️ Deleted', description: 'Expense removed' });
+      setDeleteConfirm(null);
+    }
   };
 
   const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
@@ -69,16 +81,26 @@ export default function Expenses() {
                 <p className="font-heading font-semibold text-sm">{exp.category}</p>
                 {exp.sub_category && <p className="text-[10px] text-muted-foreground">{exp.sub_category}</p>}
                 {exp.notes && <p className="text-[10px] text-muted-foreground">{exp.notes}</p>}
-                <p className="text-[10px] text-stone">{exp.date_key}</p>
+                <p className="text-[10px] text-muted-foreground">{exp.date_key}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-number font-bold text-destructive">₹{exp.amount}</span>
-                {canDelete && <button onClick={() => remove.mutate(exp.id)} className="p-1 text-destructive"><Trash2 size={14} /></button>}
+                {canDelete && <button onClick={() => setDeleteConfirm(exp.id)} className="p-1 text-destructive"><Trash2 size={14} /></button>}
               </div>
             </div>
           ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="Delete Expense"
+        message="Are you sure you want to delete this expense record?"
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
 
       {showModal && (
         <>
@@ -86,7 +108,7 @@ export default function Expenses() {
           <div className="modal-content">
             <div className="flex justify-between items-center mb-4">
               <h2 className="font-heading text-lg font-bold">{t('expense.details', lang)}</h2>
-              <button onClick={() => setShowModal(false)}><X size={20} className="text-stone" /></button>
+              <button onClick={() => setShowModal(false)}><X size={20} className="text-muted-foreground" /></button>
             </div>
             <div className="space-y-3">
               <NepaliDatePicker date={form.date} onChange={d => setForm({ ...form, date: d })} showDay />

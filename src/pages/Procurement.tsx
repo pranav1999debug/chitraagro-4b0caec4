@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
 import { useProcurement, useProcurementMutations } from '@/hooks/useFarmData';
 import { Plus, Trash2, X } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 
 export default function ProcurementPage() {
   const { lang } = useApp();
@@ -19,6 +21,7 @@ export default function ProcurementPage() {
   const { add, remove } = useProcurementMutations();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ supplier_name: '', quantity: 0, rate: 0, date: today });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const canEdit = role === 'owner' || role === 'manager';
   const canDelete = role === 'owner';
@@ -32,8 +35,17 @@ export default function ProcurementPage() {
       total: form.quantity * form.rate,
       date_key: nepaliDateToKey(form.date),
     });
+    toast({ title: '✅ Added', description: `${form.supplier_name}: ${form.quantity}L` });
     setShowModal(false);
     setForm({ supplier_name: '', quantity: 0, rate: 0, date: today });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      remove.mutate(deleteConfirm);
+      toast({ title: '🗑️ Deleted', description: 'Procurement record removed' });
+      setDeleteConfirm(null);
+    }
   };
 
   const totalQty = items.reduce((s, p) => s + Number(p.quantity), 0);
@@ -73,12 +85,22 @@ export default function ProcurementPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="font-number font-bold">₹{p.total}</span>
-                {canDelete && <button onClick={() => remove.mutate(p.id)} className="p-1 text-destructive"><Trash2 size={14} /></button>}
+                {canDelete && <button onClick={() => setDeleteConfirm(p.id)} className="p-1 text-destructive"><Trash2 size={14} /></button>}
               </div>
             </div>
           ))
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="Delete Procurement"
+        message="Are you sure you want to delete this procurement record?"
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
 
       {showModal && (
         <>
@@ -86,7 +108,7 @@ export default function ProcurementPage() {
           <div className="modal-content">
             <div className="flex justify-between items-center mb-4">
               <h2 className="font-heading text-lg font-bold">{t('procurement.addProcurement', lang)}</h2>
-              <button onClick={() => setShowModal(false)}><X size={20} className="text-stone" /></button>
+              <button onClick={() => setShowModal(false)}><X size={20} className="text-muted-foreground" /></button>
             </div>
             <div className="space-y-3">
               <NepaliDatePicker date={form.date} onChange={d => setForm({ ...form, date: d })} showDay />

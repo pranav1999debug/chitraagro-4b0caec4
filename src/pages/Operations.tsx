@@ -1,14 +1,23 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
-import { useCustomers, useTransactions, useTransactionMutations, type DbTransaction } from '@/hooks/useFarmData';
-import { MessageCircle, BarChart3, Loader2 } from 'lucide-react';
+import { useCustomers, useTransactions, useTransactionMutations, type DbTransaction, type DbCustomer } from '@/hooks/useFarmData';
+import { MessageCircle, BarChart3, Loader2, Save, Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+
+interface DraftEntry {
+  quantity: string;
+  price: string;
+  mila: string;
+  dirty: boolean;
+}
 
 export default function Operations() {
   const { lang } = useApp();
@@ -17,9 +26,10 @@ export default function Operations() {
   const today = getTodayNepali();
   const [date, setDate] = useState<NepaliDate>(today);
   const [timeGroup, setTimeGroup] = useState<'morning' | 'evening'>('morning');
-
-  // Local draft state for input fields (before blur-save)
-  const [drafts, setDrafts] = useState<Record<string, { quantity?: string; price?: string; mila?: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, DraftEntry>>({});
+  const [saving, setSaving] = useState(false);
+  const [activeQtyRow, setActiveQtyRow] = useState<string | null>(null);
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const dateKey = nepaliDateToKey(date);
   const { data: customers = [] } = useCustomers();
@@ -28,8 +38,10 @@ export default function Operations() {
 
   const canEdit = role === 'owner' || role === 'manager';
 
-  const filteredCustomers = customers.filter(
-    c => c.time_group === timeGroup || c.time_group === 'both'
+  // Only active customers for the selected time group
+  const filteredCustomers = useMemo(() =>
+    customers.filter(c => c.is_active !== false && (c.time_group === timeGroup || c.time_group === 'both')),
+    [customers, timeGroup]
   );
 
   const txMap = useMemo(() => {
@@ -38,105 +50,124 @@ export default function Operations() {
     return map;
   }, [transactions, timeGroup]);
 
-  const totalLiters = Object.values(txMap).reduce((s, tx) => s + Number(tx.quantity), 0);
-  const totalReceived = Object.values(txMap).reduce((s, tx) => s + Number(tx.total), 0);
+  // Initialize drafts with defaults when date/timeGroup changes
+  useEffect(() => {
+    const newDrafts: Record<string, DraftEntry> = {};
+    filteredCustomers.forEach(c => {
+      const tx = txMap[c.id];
+      if (tx) {
+        newDrafts[c.id] = {
+          quantity: Number(tx.quantity) > 0 ? String(tx.quantity) : '',
+          price: String(tx.price),
+          mila: Number(tx.mila) > 0 ? String(tx.mila) : '',
+          dirty: false,
+        };
+      } else {
+        const defaultQty = timeGroup === 'morning' ? c.default_qty_morning : c.default_qty_evening;
+        newDrafts[c.id] = {
+          quantity: defaultQty > 0 ? String(defaultQty) : '',
+          price: c.purchase_rate ? String(c.purchase_rate) : '',
+          mila: '',
+          dirty: defaultQty > 0, // mark dirty if we pre-filled a default
+        };
+      }
+    });
+    setDrafts(newDrafts);
+  }, [filteredCustomers, txMap, timeGroup]);
+
+  const totalLiters = useMemo(() => {
+    return filteredCustomers.reduce((s, c) => {
+      const d = drafts[c.id];
+      return s + (d ? Number(d.quantity) || 0 : 0);
+    }, 0);
+  }, [filteredCustomers, drafts]);
+
+  const totalReceived = useMemo(() => {
+    return filteredCustomers.reduce((s, c) => {
+      const d = drafts[c.id];
+      if (!d) return s;
+      const qty = Number(d.quantity) || 0;
+      const price = Number(d.price) || 0;
+      const mila = Number(d.mila) || 0;
+      return s + (qty * price - mila);
+    }, 0);
+  }, [filteredCustomers, drafts]);
 
   const isLoadingData = txLoading || txFetching;
+  const dirtyCount = Object.values(drafts).filter(d => d.dirty).length;
 
-  // Get displayed value: draft first, then DB, then default
-  const getFieldValue = (customerId: string, field: 'quantity' | 'price' | 'mila') => {
-    const draft = drafts[customerId]?.[field];
-    if (draft !== undefined) return draft;
-    const tx = txMap[customerId];
-    if (tx) {
-      const val = Number(tx[field]);
-      return val > 0 ? String(val) : '';
-    }
-    if (field === 'price') {
-      const customer = customers.find(c => c.id === customerId);
-      return customer?.purchase_rate ? String(customer.purchase_rate) : '';
-    }
-    return '';
-  };
-
-  const handleFieldInput = (customerId: string, field: 'quantity' | 'price' | 'mila', value: string) => {
+  const handleFieldInput = (customerId: string, field: keyof DraftEntry, value: string) => {
     setDrafts(prev => ({
       ...prev,
-      [customerId]: { ...prev[customerId], [field]: value }
+      [customerId]: { ...prev[customerId], [field]: value, dirty: true }
     }));
   };
 
-  const handleFieldBlur = useCallback((customerId: string, field: 'quantity' | 'price' | 'mila') => {
+  const handleQuickAdd = (customerId: string, amount: number) => {
+    setDrafts(prev => {
+      const current = prev[customerId] || { quantity: '', price: '', mila: '', dirty: false };
+      const currentQty = Number(current.quantity) || 0;
+      return {
+        ...prev,
+        [customerId]: { ...current, quantity: String(currentQty + amount), dirty: true }
+      };
+    });
+  };
+
+  const handleSaveAll = useCallback(async () => {
     if (!canEdit) return;
-    const customer = customers.find(c => c.id === customerId);
-    if (!customer) return;
+    setSaving(true);
+    let saved = 0;
 
-    const existing = txMap[customerId];
-    const draftVal = drafts[customerId]?.[field];
-    
-    // If no draft change, skip
-    if (draftVal === undefined) return;
+    for (const customer of filteredCustomers) {
+      const draft = drafts[customer.id];
+      if (!draft?.dirty) continue;
 
-    const value = Number(draftVal) || 0;
-    const qty = field === 'quantity' ? value : Number(existing?.quantity || 0);
-    const price = field === 'price' ? value : Number(existing?.price || customer.purchase_rate);
-    const mila = field === 'mila' ? value : Number(existing?.mila || 0);
-    const total = qty * price - mila;
+      const qty = Number(draft.quantity) || 0;
+      const price = Number(draft.price) || customer.purchase_rate;
+      const mila = Number(draft.mila) || 0;
+      const total = qty * price - mila;
+      const existing = txMap[customer.id];
 
-    // Clear draft for this field
+      if (existing) {
+        update.mutate({ id: existing.id, quantity: qty, price, mila, total });
+        saved++;
+      } else if (qty > 0) {
+        add.mutate({ customer_id: customer.id, date_key: dateKey, time_group: timeGroup, quantity: qty, price, mila, total });
+        saved++;
+      }
+    }
+
+    // Mark all as not dirty
     setDrafts(prev => {
       const next = { ...prev };
-      if (next[customerId]) {
-        delete next[customerId][field];
-        if (Object.keys(next[customerId]).length === 0) delete next[customerId];
-      }
+      Object.keys(next).forEach(k => { next[k] = { ...next[k], dirty: false }; });
       return next;
     });
 
-    if (existing) {
-      update.mutate(
-        { id: existing.id, [field]: value, total },
-        {
-          onSuccess: () => {
-            const fieldLabel = field === 'quantity' ? `${value} Ltr` : field === 'price' ? `₹${value}` : `₹${value} mila`;
-            toast({
-              title: '✅ Entry Updated',
-              description: `${customer.name}: ${fieldLabel}`,
-            });
-          },
-        }
-      );
-    } else if (qty > 0) {
-      add.mutate(
-        {
-          customer_id: customerId,
-          date_key: dateKey,
-          time_group: timeGroup,
-          quantity: qty,
-          price,
-          mila,
-          total,
-        },
-        {
-          onSuccess: () => {
-            toast({
-              title: '✅ Entry Added',
-              description: `${customer.name}: ${qty} Ltr @ ₹${price}`,
-            });
-          },
-        }
-      );
-    }
-  }, [canEdit, customers, txMap, drafts, dateKey, timeGroup, add, update]);
+    setSaving(false);
+    toast({ title: '✅ Saved', description: `${saved} entries saved successfully` });
+  }, [canEdit, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update]);
 
   const handleWhatsApp = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
-    const tx = txMap[customerId];
-    if (!customer || !tx) return;
-    const msg = `M's ${customer.name},\n\n📦 Amount: ${tx.quantity} Ltr @ ${tx.price}\n💰 Received: Rs ${tx.mila || 0}\n\nThanks,\nCHITRA AGRO!! 🎉`;
+    const draft = drafts[customerId];
+    if (!customer || !draft) return;
+    const qty = Number(draft.quantity) || 0;
+    const price = Number(draft.price) || 0;
+    const mila = Number(draft.mila) || 0;
+    const msg = `Hi ${customer.name},\n\n📦 Amount: ${qty} Ltr @ ₹${price}\n💰 Mila: ₹${mila}\n\nThanks,\nCHITRA AGRO!! 🎉`;
     const phone = (customer.phone || '').replace(/[^0-9]/g, '');
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
+
+  // Virtualizer for large lists
+  const rowVirtualizer = useVirtualizer({
+    count: filteredCustomers.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => activeQtyRow ? 100 : 52,
+    overscan: 10,
+  });
 
   return (
     <div className="pb-20">
@@ -163,10 +194,20 @@ export default function Operations() {
             <p className="text-xs text-muted-foreground">{t('transaction.received', lang)}</p>
             <p className="font-number text-xl font-bold text-primary">₹{totalReceived}</p>
           </div>
-          {isLoadingData && (
-            <Loader2 size={20} className="animate-spin text-primary" />
-          )}
+          {isLoadingData && <Loader2 size={20} className="animate-spin text-primary" />}
         </div>
+
+        {/* Save All Button */}
+        {canEdit && dirtyCount > 0 && (
+          <button
+            onClick={handleSaveAll}
+            disabled={saving}
+            className="action-button w-full flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+            Save All ({dirtyCount} changes)
+          </button>
+        )}
 
         <div className="stat-card">
           <h3 className="font-heading text-sm font-semibold mb-3 flex justify-between items-center">
@@ -179,68 +220,98 @@ export default function Operations() {
           {filteredCustomers.length === 0 ? (
             <p className="text-center text-muted-foreground text-sm py-8">{t('common.noData', lang)}</p>
           ) : (
-            <div className="overflow-x-auto -mx-4 px-4">
+            <>
               {isLoadingData && (
-                <div className="flex items-center justify-center py-4 gap-2 text-primary">
+                <div className="flex items-center justify-center py-2 gap-2 text-primary">
                   <Loader2 size={16} className="animate-spin" />
-                  <span className="text-sm font-body">Loading entries...</span>
+                  <span className="text-sm font-body">Loading...</span>
                 </div>
               )}
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="data-table-header text-left py-2">{t('nav.customers', lang)}</th>
-                    <th className="data-table-header text-center py-2">{t('transaction.qty', lang)}</th>
-                    <th className="data-table-header text-center py-2">{t('transaction.price', lang)}</th>
-                    <th className="data-table-header text-center py-2">{t('transaction.mila', lang)}</th>
-                    <th className="data-table-header text-center py-2"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredCustomers.map(customer => {
-                    const tx = txMap[customer.id];
-                    return (
-                      <tr key={customer.id} className="border-b border-border/50">
-                        <td className="data-table-cell text-left font-body text-xs">{customer.name}</td>
-                        <td className="data-table-cell text-center">
-                          <input type="number" inputMode="decimal"
-                            value={getFieldValue(customer.id, 'quantity')}
-                            placeholder="0"
-                            onChange={e => handleFieldInput(customer.id, 'quantity', e.target.value)}
-                            onBlur={() => handleFieldBlur(customer.id, 'quantity')}
-                            disabled={!canEdit}
-                            className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
-                        </td>
-                        <td className="data-table-cell text-center">
-                          <input type="number" inputMode="numeric"
-                            value={getFieldValue(customer.id, 'price')}
-                            onChange={e => handleFieldInput(customer.id, 'price', e.target.value)}
-                            onBlur={() => handleFieldBlur(customer.id, 'price')}
-                            disabled={!canEdit}
-                            className="w-14 text-center rounded border border-border py-1 font-number text-sm text-primary font-bold bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
-                        </td>
-                        <td className="data-table-cell text-center">
-                          <input type="number" inputMode="numeric"
-                            value={getFieldValue(customer.id, 'mila')}
-                            placeholder="0"
-                            onChange={e => handleFieldInput(customer.id, 'mila', e.target.value)}
-                            onBlur={() => handleFieldBlur(customer.id, 'mila')}
-                            disabled={!canEdit}
-                            className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
-                        </td>
-                        <td className="data-table-cell text-center">
-                          {tx && Number(tx.quantity) > 0 && (
-                            <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
-                              <MessageCircle size={16} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+              {/* Virtualized table */}
+              <div ref={parentRef} className="overflow-auto -mx-4 px-4" style={{ maxHeight: '60vh' }}>
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-card z-10">
+                    <tr className="border-b border-border">
+                      <th className="data-table-header text-left py-2">{t('nav.customers', lang)}</th>
+                      <th className="data-table-header text-center py-2">{t('transaction.qty', lang)}</th>
+                      <th className="data-table-header text-center py-2">{t('transaction.price', lang)}</th>
+                      <th className="data-table-header text-center py-2">{t('transaction.mila', lang)}</th>
+                      <th className="data-table-header text-center py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td colSpan={5} style={{ height: rowVirtualizer.getTotalSize(), padding: 0, position: 'relative' }}>
+                      {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                        const customer = filteredCustomers[virtualRow.index];
+                        const draft = drafts[customer.id] || { quantity: '', price: '', mila: '', dirty: false };
+                        const isDirty = draft.dirty;
+                        const hasQty = Number(draft.quantity) > 0;
+
+                        return (
+                          <div
+                            key={customer.id}
+                            style={{
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              transform: `translateY(${virtualRow.start}px)`,
+                            }}
+                          >
+                            <div className={`flex items-center border-b border-border/50 ${isDirty ? 'bg-primary/5' : ''}`}>
+                              <div className="data-table-cell text-left font-body text-xs flex-1 min-w-0 truncate">{customer.name}</div>
+                              <div className="data-table-cell text-center flex-shrink-0">
+                                <input type="number" inputMode="decimal"
+                                  value={draft.quantity}
+                                  placeholder="0"
+                                  onChange={e => handleFieldInput(customer.id, 'quantity', e.target.value)}
+                                  onFocus={() => setActiveQtyRow(customer.id)}
+                                  onBlur={() => setTimeout(() => setActiveQtyRow(null), 200)}
+                                  disabled={!canEdit}
+                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
+                              </div>
+                              <div className="data-table-cell text-center flex-shrink-0">
+                                <input type="number" inputMode="numeric"
+                                  value={draft.price}
+                                  onChange={e => handleFieldInput(customer.id, 'price', e.target.value)}
+                                  disabled={!canEdit}
+                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm text-primary font-bold bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
+                              </div>
+                              <div className="data-table-cell text-center flex-shrink-0">
+                                <input type="number" inputMode="numeric"
+                                  value={draft.mila}
+                                  placeholder="0"
+                                  onChange={e => handleFieldInput(customer.id, 'mila', e.target.value)}
+                                  disabled={!canEdit}
+                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
+                              </div>
+                              <div className="data-table-cell text-center flex-shrink-0">
+                                {hasQty && (
+                                  <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
+                                    <MessageCircle size={16} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {/* Quick quantity buttons */}
+                            {activeQtyRow === customer.id && canEdit && (
+                              <div className="flex gap-1 px-2 py-1 bg-muted/50">
+                                {[0.5, 1, 2].map(amt => (
+                                  <button key={amt} onClick={() => handleQuickAdd(customer.id, amt)}
+                                    className="flex-1 text-xs py-1 rounded bg-primary/10 text-primary font-heading font-semibold flex items-center justify-center gap-0.5">
+                                    <Plus size={10} />{amt}L
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </div>
