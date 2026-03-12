@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import AppHeader from '@/components/AppHeader';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { useStaff, useStaffMutations, type DbStaff } from '@/hooks/useFarmData';
 import { Plus, Trash2, Edit, X, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from '@/hooks/use-toast';
 
 const emptyStaff = { name: '', position: '' as string | null, phone: '' as string | null, email: '' as string | null, salary: 0, advance: 0, join_date: '' as string | null };
 
@@ -18,6 +20,7 @@ export default function StaffPage() {
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyStaff);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const canEdit = role === 'owner' || role === 'manager';
   const canDelete = role === 'owner';
@@ -26,8 +29,10 @@ export default function StaffPage() {
     if (!form.name.trim()) return;
     if (editId) {
       update.mutate({ id: editId, ...form });
+      toast({ title: '✅ Updated', description: `${form.name} updated` });
     } else {
       add.mutate(form);
+      toast({ title: '✅ Added', description: `${form.name} added` });
     }
     setShowModal(false);
     setEditId(null);
@@ -38,6 +43,14 @@ export default function StaffPage() {
     setEditId(s.id);
     setForm({ name: s.name, position: s.position, phone: s.phone, email: s.email, salary: s.salary, advance: s.advance, join_date: s.join_date });
     setShowModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm) {
+      remove.mutate(deleteConfirm);
+      toast({ title: '🗑️ Deleted', description: 'Staff member removed' });
+      setDeleteConfirm(null);
+    }
   };
 
   return (
@@ -65,8 +78,8 @@ export default function StaffPage() {
                 </div>
                 <div className="flex gap-1">
                   <button onClick={() => navigate(`/staff/${s.id}/attendance`)} className="p-2 text-primary"><ClipboardList size={16} /></button>
-                  {canEdit && <button onClick={() => handleEdit(s)} className="p-2 text-stone"><Edit size={16} /></button>}
-                  {canDelete && <button onClick={() => remove.mutate(s.id)} className="p-2 text-destructive"><Trash2 size={16} /></button>}
+                  {canEdit && <button onClick={() => handleEdit(s)} className="p-2 text-muted-foreground"><Edit size={16} /></button>}
+                  {canDelete && <button onClick={() => setDeleteConfirm(s.id)} className="p-2 text-destructive"><Trash2 size={16} /></button>}
                 </div>
               </div>
               <div className="mt-2 flex gap-4 text-xs text-muted-foreground">
@@ -78,13 +91,23 @@ export default function StaffPage() {
         )}
       </div>
 
+      <ConfirmDialog
+        open={!!deleteConfirm}
+        title="Delete Staff"
+        message="Are you sure you want to delete this staff member? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteConfirm(null)}
+      />
+
       {showModal && (
         <>
           <div className="modal-overlay" onClick={() => setShowModal(false)} />
           <div className="modal-content">
             <div className="flex justify-between items-center mb-4">
               <h2 className="font-heading text-lg font-bold">{t('staff.addStaff', lang)}</h2>
-              <button onClick={() => setShowModal(false)}><X size={20} className="text-stone" /></button>
+              <button onClick={() => setShowModal(false)}><X size={20} className="text-muted-foreground" /></button>
             </div>
             <div className="space-y-3">
               <input className="input-field" placeholder={t('common.name', lang)} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
