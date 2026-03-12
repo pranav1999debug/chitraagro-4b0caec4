@@ -63,8 +63,11 @@ export type Database = {
         Row: {
           address: string | null
           created_at: string
+          default_qty_evening: number
+          default_qty_morning: number
           farm_id: string
           id: string
+          is_active: boolean
           milk_type: string
           name: string
           opening_balance: number
@@ -76,8 +79,11 @@ export type Database = {
         Insert: {
           address?: string | null
           created_at?: string
+          default_qty_evening?: number
+          default_qty_morning?: number
           farm_id: string
           id?: string
+          is_active?: boolean
           milk_type?: string
           name: string
           opening_balance?: number
@@ -89,8 +95,11 @@ export type Database = {
         Update: {
           address?: string | null
           created_at?: string
+          default_qty_evening?: number
+          default_qty_morning?: number
           farm_id?: string
           id?: string
+          is_active?: boolean
           milk_type?: string
           name?: string
           opening_balance?: number
