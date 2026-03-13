@@ -315,6 +315,7 @@ export type Database = {
           id: string
           quantity: number
           rate: number
+          supplier_id: string | null
           supplier_name: string
           total: number
         }
@@ -325,6 +326,7 @@ export type Database = {
           id?: string
           quantity?: number
           rate?: number
+          supplier_id?: string | null
           supplier_name: string
           total?: number
         }
@@ -335,6 +337,7 @@ export type Database = {
           id?: string
           quantity?: number
           rate?: number
+          supplier_id?: string | null
           supplier_name?: string
           total?: number
         }
@@ -344,6 +347,13 @@ export type Database = {
             columns: ["farm_id"]
             isOneToOne: false
             referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "procurement_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
         ]
@@ -429,6 +439,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "staff_farm_id_fkey"
+            columns: ["farm_id"]
+            isOneToOne: false
+            referencedRelation: "farms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suppliers: {
+        Row: {
+          created_at: string
+          default_qty: number
+          default_rate: number
+          farm_id: string
+          id: string
+          is_active: boolean
+          name: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_qty?: number
+          default_rate?: number
+          farm_id: string
+          id?: string
+          is_active?: boolean
+          name: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_qty?: number
+          default_rate?: number
+          farm_id?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suppliers_farm_id_fkey"
             columns: ["farm_id"]
             isOneToOne: false
             referencedRelation: "farms"

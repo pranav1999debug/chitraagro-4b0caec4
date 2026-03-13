@@ -441,11 +441,64 @@ export function useExpenseMutations() {
   return { add, remove };
 }
 
+// ==================== SUPPLIERS ====================
+export interface DbSupplier {
+  id: string;
+  farm_id: string;
+  name: string;
+  phone: string | null;
+  default_qty: number;
+  default_rate: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useSuppliers() {
+  return useFarmQuery<DbSupplier>('suppliers', 'suppliers' as any);
+}
+
+export function useSupplierMutations() {
+  const qc = useQueryClient();
+  const { farmId } = useAuth();
+
+  const add = useMutation({
+    mutationFn: async (s: Omit<DbSupplier, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
+      const payload = { ...s, farm_id: farmId! };
+      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'insert', data: payload }); return; }
+      const { error } = await (supabase.from('suppliers' as any) as any).insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+
+  const update = useMutation({
+    mutationFn: async ({ id, ...s }: { id: string } & Partial<DbSupplier>) => {
+      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'update', data: { id, ...s } }); return; }
+      const { error } = await (supabase.from('suppliers' as any) as any).update(s).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'delete', data: { id } }); return; }
+      const { error } = await (supabase.from('suppliers' as any) as any).delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
+  });
+
+  return { add, update, remove };
+}
+
 // ==================== PROCUREMENT ====================
 export interface DbProcurement {
   id: string;
   farm_id: string;
   supplier_name: string;
+  supplier_id: string | null;
   quantity: number;
   rate: number;
   total: number;
