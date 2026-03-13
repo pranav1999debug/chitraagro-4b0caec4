@@ -25,7 +25,7 @@ export default function Operations() {
   const navigate = useNavigate();
   const today = getTodayNepali();
   const [date, setDate] = useState<NepaliDate>(today);
-  const [timeGroup, setTimeGroup] = useState<'morning' | 'evening'>('morning');
+  const [timeGroup, setTimeGroup] = useState<'morning' | 'evening'>(() => new Date().getHours() < 12 ? 'morning' : 'evening');
   const [drafts, setDrafts] = useState<Record<string, DraftEntry>>({});
   const [saving, setSaving] = useState(false);
   const [activeQtyRow, setActiveQtyRow] = useState<string | null>(null);
