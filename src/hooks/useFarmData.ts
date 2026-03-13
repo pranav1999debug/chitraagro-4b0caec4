@@ -146,9 +146,26 @@ export function useTransactionMutations() {
   const add = useMutation({
     mutationFn: async (t: Omit<DbTransaction, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
       const payload = { ...t, farm_id: farmId! };
-      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'insert', data: payload }); return null; }
+      if (!isOnline()) {
+        // Generate a temporary ID for optimistic update
+        const tempId = 'offline_' + Date.now().toString(36);
+        const optimistic: DbTransaction = {
+          id: tempId, farm_id: farmId!, created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(), ...t,
+        };
+        addPendingMutation({ table: 'transactions', action: 'insert', data: payload });
+        // Optimistically update the cache
+        const cacheKey = `transactions_${farmId}_${t.date_key}`;
+        const cached = getCachedData<DbTransaction>(cacheKey) || [];
+        setCachedData(cacheKey, [...cached, optimistic]);
+        return optimistic;
+      }
       const { data, error } = await supabase.from('transactions').insert(payload).select().single();
       if (error) throw error;
+      // Update the localStorage cache too
+      const cacheKey = `transactions_${farmId}_${t.date_key}`;
+      const cached = getCachedData<DbTransaction>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, data as DbTransaction]);
       return data;
     },
     onSuccess: () => {
@@ -159,7 +176,19 @@ export function useTransactionMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...t }: { id: string } & Partial<DbTransaction>) => {
-      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'update', data: { id, ...t } }); return; }
+      if (!isOnline()) {
+        addPendingMutation({ table: 'transactions', action: 'update', data: { id, ...t } });
+        // Optimistically update cache for all matching date keys
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('chitra_cache_transactions_')) {
+            const cached = getCachedData<DbTransaction>(key.replace('chitra_cache_', '')) || [];
+            const updated = cached.map(tx => tx.id === id ? { ...tx, ...t, updated_at: new Date().toISOString() } : tx);
+            setCachedData(key.replace('chitra_cache_', ''), updated);
+          }
+        }
+        return;
+      }
       const { error } = await supabase.from('transactions').update(t).eq('id', id);
       if (error) throw error;
     },
