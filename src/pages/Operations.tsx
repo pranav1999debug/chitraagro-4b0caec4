@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import AppHeader from '@/components/AppHeader';
 import NepaliDatePicker from '@/components/NepaliDatePicker';
-import ConfirmDialog from '@/components/ConfirmDialog';
+import VoiceCommandButton from '@/components/VoiceCommandButton';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
@@ -50,12 +50,13 @@ export default function Operations() {
     return map;
   }, [transactions, timeGroup]);
 
-  // Initialize drafts with defaults when date/timeGroup changes
+  // Initialize drafts: show SAVED values if transaction exists, otherwise show defaults only if no save has been done yet
   useEffect(() => {
     const newDrafts: Record<string, DraftEntry> = {};
     filteredCustomers.forEach(c => {
       const tx = txMap[c.id];
       if (tx) {
+        // Transaction exists (previously saved) — show saved values, NOT dirty
         newDrafts[c.id] = {
           quantity: Number(tx.quantity) > 0 ? String(tx.quantity) : '',
           price: String(tx.price),
@@ -63,12 +64,13 @@ export default function Operations() {
           dirty: false,
         };
       } else {
+        // No saved transaction — pre-fill defaults, mark dirty so user can save
         const defaultQty = timeGroup === 'morning' ? c.default_qty_morning : c.default_qty_evening;
         newDrafts[c.id] = {
           quantity: defaultQty > 0 ? String(defaultQty) : '',
           price: c.purchase_rate ? String(c.purchase_rate) : '',
           mila: '',
-          dirty: defaultQty > 0, // mark dirty if we pre-filled a default
+          dirty: defaultQty > 0,
         };
       }
     });
@@ -138,7 +140,7 @@ export default function Operations() {
       }
     }
 
-    // Mark all as not dirty
+    // Mark all as not dirty after save
     setDrafts(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(k => { next[k] = { ...next[k], dirty: false }; });
@@ -148,6 +150,24 @@ export default function Operations() {
     setSaving(false);
     toast({ title: '✅ Saved', description: `${saved} entries saved successfully` });
   }, [canEdit, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update]);
+
+  // Voice command handler
+  const handleVoiceApply = useCallback((entries: Array<{ customer_id: string; customer_name: string; quantity: number; price: number }>) => {
+    setDrafts(prev => {
+      const next = { ...prev };
+      entries.forEach(e => {
+        if (next[e.customer_id]) {
+          next[e.customer_id] = {
+            ...next[e.customer_id],
+            quantity: String(e.quantity),
+            price: String(e.price),
+            dirty: true,
+          };
+        }
+      });
+      return next;
+    });
+  }, []);
 
   const handleWhatsApp = (customerId: string) => {
     const customer = customers.find(c => c.id === customerId);
@@ -197,7 +217,7 @@ export default function Operations() {
           {isLoadingData && <Loader2 size={20} className="animate-spin text-primary" />}
         </div>
 
-        {/* Save All Button */}
+        {/* Save All Button - only show when there are dirty entries */}
         {canEdit && dirtyCount > 0 && (
           <button
             onClick={handleSaveAll}
@@ -208,6 +228,18 @@ export default function Operations() {
             Save All ({dirtyCount} changes)
           </button>
         )}
+
+        {/* Voice Command Result / Button */}
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <VoiceCommandButton
+              customers={customers}
+              timeGroup={timeGroup}
+              dateKey={dateKey}
+              onApply={handleVoiceApply}
+            />
+          </div>
+        </div>
 
         <div className="stat-card">
           <h3 className="font-heading text-sm font-semibold mb-3 flex justify-between items-center">
