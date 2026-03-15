@@ -119,7 +119,7 @@ export function useTransactions(dateKey?: string) {
       if (!isOnline()) {
         return getCachedData<DbTransaction>(cacheKey) || [];
       }
-      let q = supabase.from('transactions').select('*').eq('farm_id', farmId);
+      let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
       if (dateKey) q = q.eq('date_key', dateKey);
       const { data, error } = await q;
       if (error) throw error;
@@ -147,14 +147,12 @@ export function useTransactionMutations() {
     mutationFn: async (t: Omit<DbTransaction, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
       const payload = { ...t, farm_id: farmId! };
       if (!isOnline()) {
-        // Generate a temporary ID for optimistic update
         const tempId = 'offline_' + Date.now().toString(36);
         const optimistic: DbTransaction = {
           id: tempId, farm_id: farmId!, created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(), ...t,
         };
         addPendingMutation({ table: 'transactions', action: 'insert', data: payload });
-        // Optimistically update the cache
         const cacheKey = `transactions_${farmId}_${t.date_key}`;
         const cached = getCachedData<DbTransaction>(cacheKey) || [];
         setCachedData(cacheKey, [...cached, optimistic]);
@@ -162,40 +160,24 @@ export function useTransactionMutations() {
       }
       const { data, error } = await supabase.from('transactions').insert(payload).select().single();
       if (error) throw error;
-      // Update the localStorage cache too
       const cacheKey = `transactions_${farmId}_${t.date_key}`;
       const cached = getCachedData<DbTransaction>(cacheKey) || [];
       setCachedData(cacheKey, [...cached, data as DbTransaction]);
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['all-transactions'] });
-    },
+    // Don't auto-invalidate - we'll do it manually after batch saves
   });
 
   const update = useMutation({
     mutationFn: async ({ id, ...t }: { id: string } & Partial<DbTransaction>) => {
       if (!isOnline()) {
         addPendingMutation({ table: 'transactions', action: 'update', data: { id, ...t } });
-        // Optimistically update cache for all matching date keys
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key?.startsWith('chitra_cache_transactions_')) {
-            const cached = getCachedData<DbTransaction>(key.replace('chitra_cache_', '')) || [];
-            const updated = cached.map(tx => tx.id === id ? { ...tx, ...t, updated_at: new Date().toISOString() } : tx);
-            setCachedData(key.replace('chitra_cache_', ''), updated);
-          }
-        }
         return;
       }
       const { error } = await supabase.from('transactions').update(t).eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['all-transactions'] });
-    },
+    // Don't auto-invalidate - we'll do it manually after batch saves
   });
 
   const remove = useMutation({
@@ -210,7 +192,13 @@ export function useTransactionMutations() {
     },
   });
 
-  return { add, update, remove };
+  // Manual invalidation function for batch operations
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    qc.invalidateQueries({ queryKey: ['all-transactions'] });
+  };
+
+  return { add, update, remove, invalidateAll };
 }
 
 // ==================== PAYMENTS ====================
@@ -426,6 +414,18 @@ export function useExpenseMutations() {
     },
   });
 
+  const update = useMutation({
+    mutationFn: async ({ id, ...e }: { id: string } & Partial<DbExpense>) => {
+      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'update', data: { id, ...e } }); return; }
+      const { error } = await supabase.from('expenses').update(e).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['expenses'] });
+      qc.invalidateQueries({ queryKey: ['all-expenses'] });
+    },
+  });
+
   const remove = useMutation({
     mutationFn: async (id: string) => {
       if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'delete', data: { id } }); return; }
@@ -438,7 +438,7 @@ export function useExpenseMutations() {
     },
   });
 
-  return { add, remove };
+  return { add, update, remove };
 }
 
 // ==================== SUPPLIERS ====================
