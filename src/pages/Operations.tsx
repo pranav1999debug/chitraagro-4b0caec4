@@ -181,6 +181,9 @@ export default function Operations() {
       return next;
     });
 
+    // Invalidate queries ONCE after all saves complete
+    invalidateAll();
+
     savingRef.current = false;
     setSaving(false);
 
@@ -189,7 +192,7 @@ export default function Operations() {
     } else {
       toast({ title: '✅ Saved', description: `${saved} entries saved successfully` });
     }
-  }, [canEdit, saving, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update]);
+  }, [canEdit, saving, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update, invalidateAll]);
 
   // Voice command handler
   const handleVoiceApply = useCallback((entries: Array<{ customer_id: string; customer_name: string; quantity: number; price: number }>) => {
