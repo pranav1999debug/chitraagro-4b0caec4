@@ -30,6 +30,8 @@ export default function Operations() {
   const [saving, setSaving] = useState(false);
   const [activeQtyRow, setActiveQtyRow] = useState<string | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
+  // Track whether we're in the middle of saving to prevent useEffect from resetting drafts
+  const savingRef = useRef(false);
 
   const dateKey = nepaliDateToKey(date);
   const { data: customers = [] } = useCustomers();
@@ -50,21 +52,31 @@ export default function Operations() {
     return map;
   }, [transactions, timeGroup]);
 
-  // Initialize drafts: show SAVED values if transaction exists, otherwise show defaults only if no save has been done yet
+  // Check if ANY transactions exist for this date+timeGroup (means sheet was saved before)
+  const hasAnySavedTransactions = useMemo(() => {
+    return transactions.some(tx => tx.time_group === timeGroup);
+  }, [transactions, timeGroup]);
+
+  // Initialize drafts from saved data
+  // If sheet was saved before: show saved values (or blank for unsaved customers)
+  // If sheet is fresh (never saved): show defaults
   useEffect(() => {
+    // Don't reset drafts while saving
+    if (savingRef.current) return;
+
     const newDrafts: Record<string, DraftEntry> = {};
     filteredCustomers.forEach(c => {
       const tx = txMap[c.id];
       if (tx) {
-        // Transaction exists (previously saved) — show saved values, NOT dirty
+        // Transaction exists — show saved values
         newDrafts[c.id] = {
           quantity: Number(tx.quantity) > 0 ? String(tx.quantity) : '',
           price: String(tx.price),
           mila: Number(tx.mila) > 0 ? String(tx.mila) : '',
           dirty: false,
         };
-      } else {
-        // No saved transaction — pre-fill defaults, mark dirty so user can save
+      } else if (!hasAnySavedTransactions) {
+        // Fresh sheet (never saved) — show defaults
         const defaultQty = timeGroup === 'morning' ? c.default_qty_morning : c.default_qty_evening;
         newDrafts[c.id] = {
           quantity: defaultQty > 0 ? String(defaultQty) : '',
@@ -72,10 +84,18 @@ export default function Operations() {
           mila: '',
           dirty: defaultQty > 0,
         };
+      } else {
+        // Sheet was saved before, but this customer had no entry — show blank (no defaults)
+        newDrafts[c.id] = {
+          quantity: '',
+          price: c.purchase_rate ? String(c.purchase_rate) : '',
+          mila: '',
+          dirty: false,
+        };
       }
     });
     setDrafts(newDrafts);
-  }, [filteredCustomers, txMap, timeGroup]);
+  }, [filteredCustomers, txMap, timeGroup, hasAnySavedTransactions]);
 
   const totalLiters = useMemo(() => {
     return filteredCustomers.reduce((s, c) => {
@@ -117,9 +137,14 @@ export default function Operations() {
   };
 
   const handleSaveAll = useCallback(async () => {
-    if (!canEdit) return;
+    if (!canEdit || saving) return;
     setSaving(true);
+    savingRef.current = true;
     let saved = 0;
+    let failed = 0;
+
+    // Collect all mutations to execute
+    const mutations: Promise<any>[] = [];
 
     for (const customer of filteredCustomers) {
       const draft = drafts[customer.id];
@@ -132,24 +157,39 @@ export default function Operations() {
       const existing = txMap[customer.id];
 
       if (existing) {
-        update.mutate({ id: existing.id, quantity: qty, price, mila, total });
-        saved++;
+        mutations.push(
+          update.mutateAsync({ id: existing.id, quantity: qty, price, mila, total })
+            .then(() => { saved++; })
+            .catch((err) => { console.error('Save failed for', customer.name, err); failed++; })
+        );
       } else if (qty > 0) {
-        add.mutate({ customer_id: customer.id, date_key: dateKey, time_group: timeGroup, quantity: qty, price, mila, total });
-        saved++;
+        mutations.push(
+          add.mutateAsync({ customer_id: customer.id, date_key: dateKey, time_group: timeGroup, quantity: qty, price, mila, total })
+            .then(() => { saved++; })
+            .catch((err) => { console.error('Save failed for', customer.name, err); failed++; })
+        );
       }
     }
 
-    // Mark all as not dirty after save
+    // Wait for ALL mutations to complete
+    await Promise.all(mutations);
+
+    // Now mark all as not dirty
     setDrafts(prev => {
       const next = { ...prev };
       Object.keys(next).forEach(k => { next[k] = { ...next[k], dirty: false }; });
       return next;
     });
 
+    savingRef.current = false;
     setSaving(false);
-    toast({ title: '✅ Saved', description: `${saved} entries saved successfully` });
-  }, [canEdit, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update]);
+
+    if (failed > 0) {
+      toast({ title: '⚠️ Partial Save', description: `${saved} saved, ${failed} failed. Please retry.`, variant: 'destructive' });
+    } else {
+      toast({ title: '✅ Saved', description: `${saved} entries saved successfully` });
+    }
+  }, [canEdit, saving, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update]);
 
   // Voice command handler
   const handleVoiceApply = useCallback((entries: Array<{ customer_id: string; customer_name: string; quantity: number; price: number }>) => {
