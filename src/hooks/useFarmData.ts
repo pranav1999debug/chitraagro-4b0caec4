@@ -19,7 +19,7 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
         const cached = getCachedData<T>(cacheKey);
         return cached || [];
       }
-      let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId);
+      let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
       if (extraFilter) q = extraFilter(q);
       const { data, error } = await q;
       if (error) throw error;
