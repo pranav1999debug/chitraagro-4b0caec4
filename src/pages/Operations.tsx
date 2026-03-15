@@ -36,7 +36,7 @@ export default function Operations() {
   const dateKey = nepaliDateToKey(date);
   const { data: customers = [] } = useCustomers();
   const { data: transactions = [], isLoading: txLoading, isFetching: txFetching } = useTransactions(dateKey);
-  const { add, update } = useTransactionMutations();
+  const { add, update, invalidateAll } = useTransactionMutations();
 
   const canEdit = role === 'owner' || role === 'manager';
 
