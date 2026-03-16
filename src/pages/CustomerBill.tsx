@@ -5,7 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, getNepaliMonthName, getDaysInMonth } from '@/lib/nepaliDate';
-import { useCustomers, useAllTransactions, usePayments } from '@/hooks/useFarmData';
+import { useCustomers, useCustomerMonthTransactions, usePayments } from '@/hooks/useFarmData';
 import { Download, MessageCircle, ArrowLeft } from 'lucide-react';
 
 export default function CustomerBill() {
@@ -18,11 +18,11 @@ export default function CustomerBill() {
   const [month, setMonth] = useState(today.month);
 
   const { data: customers = [] } = useCustomers();
-  const { data: allTransactions = [] } = useAllTransactions();
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  const { data: customerTransactions = [] } = useCustomerMonthTransactions(customerId, yearMonth);
   const { data: allPayments = [] } = usePayments();
 
   const customer = customers.find(c => c.id === customerId);
-  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = getDaysInMonth(year, month);
 
   const dailyRecords = useMemo(() => {
@@ -30,7 +30,7 @@ export default function CustomerBill() {
     const records: { day: number; dateKey: string; liters: number; rate: number; amount: number }[] = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dateKey = `${yearMonth}-${String(d).padStart(2, '0')}`;
-      const dayTx = allTransactions.filter(tx => tx.customer_id === customerId && tx.date_key === dateKey);
+      const dayTx = customerTransactions.filter(tx => tx.date_key === dateKey);
       if (dayTx.length > 0) {
         const liters = dayTx.reduce((s, tx) => s + Number(tx.quantity), 0);
         const amount = dayTx.reduce((s, tx) => s + Number(tx.total), 0);
@@ -39,7 +39,7 @@ export default function CustomerBill() {
       }
     }
     return records;
-  }, [allTransactions, customerId, yearMonth, daysInMonth, customer]);
+  }, [customerTransactions, yearMonth, daysInMonth, customer]);
 
   const monthPayments = useMemo(() => {
     if (!customer) return [];
