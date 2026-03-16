@@ -30,7 +30,7 @@ export default function CustomerBill() {
     const records: { day: number; dateKey: string; liters: number; rate: number; amount: number }[] = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dateKey = `${yearMonth}-${String(d).padStart(2, '0')}`;
-      const dayTx = allTransactions.filter(tx => tx.customer_id === customerId && tx.date_key === dateKey);
+      const dayTx = customerTransactions.filter(tx => tx.date_key === dateKey);
       if (dayTx.length > 0) {
         const liters = dayTx.reduce((s, tx) => s + Number(tx.quantity), 0);
         const amount = dayTx.reduce((s, tx) => s + Number(tx.total), 0);
