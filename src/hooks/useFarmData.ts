@@ -249,6 +249,10 @@ export function usePaymentMutations() {
   const add = useMutation({
     mutationFn: async (p: Omit<DbPayment, 'id' | 'farm_id' | 'created_at'>) => {
       const payload = { ...p, farm_id: farmId! };
+      const optimistic: DbPayment = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...p };
+      const cacheKey = `payments_${farmId}`;
+      const cached = getCachedData<DbPayment>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, optimistic]);
       if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'insert', data: payload }); return; }
       const { error } = await supabase.from('payments').insert(payload);
       if (error) throw error;
@@ -258,6 +262,9 @@ export function usePaymentMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const cacheKey = `payments_${farmId}`;
+      const cached = getCachedData<DbPayment>(cacheKey) || [];
+      setCachedData(cacheKey, cached.filter(x => x.id !== id));
       if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('payments').delete().eq('id', id);
       if (error) throw error;
