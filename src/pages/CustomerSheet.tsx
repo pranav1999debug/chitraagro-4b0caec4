@@ -150,8 +150,8 @@ export default function CustomerSheet() {
     try {
       await Promise.all(
         rowsToSave.map(async (row) => {
-          const qty = Number(row.quantity) || 0;
-          const rate = Number(row.rate) || 0;
+          const qty = parseFloat(row.quantity) || 0;
+          const rate = parseFloat(row.rate) || 0;
           const total = qty * rate;
 
           try {
