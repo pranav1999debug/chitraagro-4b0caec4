@@ -10,9 +10,10 @@ interface Profile {
   active_farm_id: string | null;
 }
 
-interface FarmMember {
-  farm_id: string;
-  role: 'owner' | 'manager' | 'staff';
+interface AuthCache {
+  profile: Profile;
+  farmName: string | null;
+  role: 'owner' | 'manager' | 'staff' | null;
 }
 
 interface AuthContextType {
@@ -27,9 +28,18 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>;
 }
 
+const AUTH_CACHE_PREFIX = 'chitra_auth_cache_';
+
 const AuthContext = createContext<AuthContextType>({
-  user: null, session: null, profile: null, farmId: null, farmName: null,
-  role: null, loading: true, signOut: async () => {}, refreshProfile: async () => {},
+  user: null,
+  session: null,
+  profile: null,
+  farmId: null,
+  farmName: null,
+  role: null,
+  loading: true,
+  signOut: async () => {},
+  refreshProfile: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -43,46 +53,91 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [role, setRole] = useState<'owner' | 'manager' | 'staff' | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const getCacheKey = (userId: string) => `${AUTH_CACHE_PREFIX}${userId}`;
+
+  const loadAuthCache = (userId: string): AuthCache | null => {
+    try {
+      const raw = localStorage.getItem(getCacheKey(userId));
+      if (!raw) return null;
+      return JSON.parse(raw) as AuthCache;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveAuthCache = (userId: string, cache: AuthCache) => {
+    try {
+      localStorage.setItem(getCacheKey(userId), JSON.stringify(cache));
+    } catch {
+      // ignore cache write issues
+    }
+  };
+
+  const clearAuthCache = (userId?: string) => {
+    if (!userId) return;
+    localStorage.removeItem(getCacheKey(userId));
+  };
+
+  const hydrateFromCache = (userId: string) => {
+    const cached = loadAuthCache(userId);
+    if (!cached) return false;
+
+    setProfile(cached.profile);
+    setFarmId(cached.profile.active_farm_id || null);
+    setFarmName(cached.farmName || null);
+    setRole(cached.role || null);
+    return true;
+  };
+
   const fetchProfile = async (userId: string) => {
-    const { data: prof } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (prof) {
-      setProfile(prof as Profile);
-      const activeFarm = prof.active_farm_id;
-
-      if (activeFarm) {
-        setFarmId(activeFarm);
-
-        const { data: farm } = await supabase
-          .from('farms')
-          .select('name')
-          .eq('id', activeFarm)
-          .single();
-        setFarmName(farm?.name || null);
-
-        const { data: member } = await supabase
-          .from('farm_members')
-          .select('role')
-          .eq('farm_id', activeFarm)
-          .eq('user_id', userId)
-          .single();
-        setRole((member?.role as 'owner' | 'manager' | 'staff') || null);
+    try {
+      const { data: prof, error: profileError } = await supabase.from('profiles').select('*').eq('user_id', userId).single();
+      if (profileError || !prof) {
+        hydrateFromCache(userId);
+        return;
       }
+
+      const normalizedProfile = prof as Profile;
+      setProfile(normalizedProfile);
+
+      const activeFarm = normalizedProfile.active_farm_id;
+      if (!activeFarm) {
+        setFarmId(null);
+        setFarmName(null);
+        setRole(null);
+        saveAuthCache(userId, { profile: normalizedProfile, farmName: null, role: null });
+        return;
+      }
+
+      setFarmId(activeFarm);
+
+      const [{ data: farm }, { data: member }] = await Promise.all([
+        supabase.from('farms').select('name').eq('id', activeFarm).single(),
+        supabase.from('farm_members').select('role').eq('farm_id', activeFarm).eq('user_id', userId).single(),
+      ]);
+
+      const nextFarmName = farm?.name || null;
+      const nextRole = (member?.role as 'owner' | 'manager' | 'staff' | null) || null;
+
+      setFarmName(nextFarmName);
+      setRole(nextRole);
+
+      saveAuthCache(userId, {
+        profile: normalizedProfile,
+        farmName: nextFarmName,
+        role: nextRole,
+      });
+    } catch {
+      hydrateFromCache(userId);
     }
   };
 
   useEffect(() => {
-    // Set up auth listener BEFORE getSession
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
 
       if (sess?.user) {
-        // Use setTimeout to avoid Supabase deadlock
         setTimeout(() => fetchProfile(sess.user.id), 0);
       } else {
         setProfile(null);
@@ -90,23 +145,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setFarmName(null);
         setRole(null);
       }
+
       setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
-      setSession(sess);
-      setUser(sess?.user ?? null);
-      if (sess?.user) {
-        fetchProfile(sess.user.id);
-      }
-      setLoading(false);
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data: { session: sess } }) => {
+        setSession(sess);
+        setUser(sess?.user ?? null);
+        if (sess?.user) {
+          fetchProfile(sess.user.id);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
 
     return () => subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {
+    const currentUserId = user?.id;
     await supabase.auth.signOut();
+    clearAuthCache(currentUserId);
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -119,9 +182,5 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user) await fetchProfile(user.id);
   };
 
-  return (
-    <AuthContext.Provider value={{ user, session, profile, farmId, farmName, role, loading, signOut, refreshProfile }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, session, profile, farmId, farmName, role, loading, signOut, refreshProfile }}>{children}</AuthContext.Provider>;
 };

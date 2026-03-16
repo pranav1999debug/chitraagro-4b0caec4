@@ -15,17 +15,24 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
     queryKey: [key, farmId],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<T>(cacheKey);
       if (!isOnline()) {
-        const cached = getCachedData<T>(cacheKey);
         return cached || [];
       }
-      let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
-      if (extraFilter) q = extraFilter(q);
-      const { data, error } = await q;
-      if (error) throw error;
-      const result = (data || []) as T[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
+        if (extraFilter) q = extraFilter(q);
+        const { data, error } = await q;
+        if (error) throw error;
+        const result = (data || []) as T[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId,
     placeholderData: () => {
@@ -116,16 +123,24 @@ export function useTransactions(dateKey?: string) {
     queryKey: ['transactions', farmId, dateKey],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<DbTransaction>(cacheKey);
       if (!isOnline()) {
-        return getCachedData<DbTransaction>(cacheKey) || [];
+        return cached || [];
       }
-      let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
-      if (dateKey) q = q.eq('date_key', dateKey);
-      const { data, error } = await q;
-      if (error) throw error;
-      const result = (data || []) as DbTransaction[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
+        if (dateKey) q = q.eq('date_key', dateKey);
+        const { data, error } = await q;
+        if (error) throw error;
+        const result = (data || []) as DbTransaction[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId,
     placeholderData: () => {
@@ -315,19 +330,27 @@ export function useAttendance(staffId: string, yearMonth: string) {
     queryKey: ['attendance', farmId, staffId, yearMonth],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<DbAttendance>(cacheKey);
       if (!isOnline()) {
-        return getCachedData<DbAttendance>(cacheKey) || [];
+        return cached || [];
       }
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('farm_id', farmId)
-        .eq('staff_id', staffId)
-        .like('date_key', `${yearMonth}%`);
-      if (error) throw error;
-      const result = (data || []) as DbAttendance[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        const { data, error } = await supabase
+          .from('attendance')
+          .select('*')
+          .eq('farm_id', farmId)
+          .eq('staff_id', staffId)
+          .like('date_key', `${yearMonth}%`);
+        if (error) throw error;
+        const result = (data || []) as DbAttendance[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId && !!staffId,
     placeholderData: () => {
