@@ -618,6 +618,10 @@ export function useProcurementMutations() {
   const add = useMutation({
     mutationFn: async (p: Omit<DbProcurement, 'id' | 'farm_id' | 'created_at'>) => {
       const payload = { ...p, farm_id: farmId! };
+      const optimistic: DbProcurement = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...p };
+      const cacheKey = `procurement_${farmId}`;
+      const cached = getCachedData<DbProcurement>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, optimistic]);
       if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'insert', data: payload }); return; }
       const { error } = await supabase.from('procurement').insert(payload);
       if (error) throw error;
@@ -630,6 +634,9 @@ export function useProcurementMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const cacheKey = `procurement_${farmId}`;
+      const cached = getCachedData<DbProcurement>(cacheKey) || [];
+      setCachedData(cacheKey, cached.filter(x => x.id !== id));
       if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('procurement').delete().eq('id', id);
       if (error) throw error;
