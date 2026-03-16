@@ -15,17 +15,24 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
     queryKey: [key, farmId],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<T>(cacheKey);
       if (!isOnline()) {
-        const cached = getCachedData<T>(cacheKey);
         return cached || [];
       }
-      let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
-      if (extraFilter) q = extraFilter(q);
-      const { data, error } = await q;
-      if (error) throw error;
-      const result = (data || []) as T[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
+        if (extraFilter) q = extraFilter(q);
+        const { data, error } = await q;
+        if (error) throw error;
+        const result = (data || []) as T[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId,
     placeholderData: () => {
