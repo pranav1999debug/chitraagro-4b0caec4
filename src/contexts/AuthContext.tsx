@@ -140,7 +140,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (sess?.user) {
         setTimeout(() => fetchProfile(sess.user.id), 0);
       } else {
-        clearAuthCache(user?.id);
         setProfile(null);
         setFarmId(null);
         setFarmName(null);
