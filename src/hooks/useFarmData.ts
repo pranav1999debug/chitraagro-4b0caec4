@@ -549,6 +549,10 @@ export function useSupplierMutations() {
   const add = useMutation({
     mutationFn: async (s: Omit<DbSupplier, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
       const payload = { ...s, farm_id: farmId! };
+      const optimistic: DbSupplier = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...s };
+      const cacheKey = `suppliers_${farmId}`;
+      const cached = getCachedData<DbSupplier>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, optimistic]);
       if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'insert', data: payload }); return; }
       const { error } = await (supabase.from('suppliers' as any) as any).insert(payload);
       if (error) throw error;
@@ -558,6 +562,10 @@ export function useSupplierMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...s }: { id: string } & Partial<DbSupplier>) => {
+      const cacheKey = `suppliers_${farmId}`;
+      const cached = getCachedData<DbSupplier>(cacheKey) || [];
+      const idx = cached.findIndex(x => x.id === id);
+      if (idx >= 0) { cached[idx] = { ...cached[idx], ...s }; setCachedData(cacheKey, cached); }
       if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'update', data: { id, ...s } }); return; }
       const { error } = await (supabase.from('suppliers' as any) as any).update(s).eq('id', id);
       if (error) throw error;
@@ -567,6 +575,9 @@ export function useSupplierMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const cacheKey = `suppliers_${farmId}`;
+      const cached = getCachedData<DbSupplier>(cacheKey) || [];
+      setCachedData(cacheKey, cached.filter(x => x.id !== id));
       if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'delete', data: { id } }); return; }
       const { error } = await (supabase.from('suppliers' as any) as any).delete().eq('id', id);
       if (error) throw error;
