@@ -477,6 +477,10 @@ export function useExpenseMutations() {
   const add = useMutation({
     mutationFn: async (e: Omit<DbExpense, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
       const payload = { ...e, farm_id: farmId! };
+      const optimistic: DbExpense = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...e };
+      const cacheKey = `expenses_${farmId}`;
+      const cached = getCachedData<DbExpense>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, optimistic]);
       if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'insert', data: payload }); return; }
       const { error } = await supabase.from('expenses').insert(payload);
       if (error) throw error;
@@ -489,6 +493,10 @@ export function useExpenseMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...e }: { id: string } & Partial<DbExpense>) => {
+      const cacheKey = `expenses_${farmId}`;
+      const cached = getCachedData<DbExpense>(cacheKey) || [];
+      const idx = cached.findIndex(x => x.id === id);
+      if (idx >= 0) { cached[idx] = { ...cached[idx], ...e }; setCachedData(cacheKey, cached); }
       if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'update', data: { id, ...e } }); return; }
       const { error } = await supabase.from('expenses').update(e).eq('id', id);
       if (error) throw error;
@@ -501,6 +509,9 @@ export function useExpenseMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const cacheKey = `expenses_${farmId}`;
+      const cached = getCachedData<DbExpense>(cacheKey) || [];
+      setCachedData(cacheKey, cached.filter(x => x.id !== id));
       if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('expenses').delete().eq('id', id);
       if (error) throw error;
