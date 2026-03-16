@@ -285,7 +285,8 @@ export default function CustomerSheet() {
                         <input
                           type="number"
                           inputMode="decimal"
-                          step="0.5"
+                          step="0.1"
+                          min="0"
                           value={row.quantity}
                           onChange={e => handleQtyChange(idx, e.target.value)}
                           className="w-16 rounded border border-border bg-card px-2 py-1.5 text-center font-number text-xs"
