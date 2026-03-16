@@ -72,6 +72,10 @@ export function useCustomerMutations() {
   const add = useMutation({
     mutationFn: async (c: Omit<DbCustomer, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
       const payload = { ...c, farm_id: farmId! };
+      const optimistic: DbCustomer = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...c };
+      const cacheKey = `customers_${farmId}`;
+      const cached = getCachedData<DbCustomer>(cacheKey) || [];
+      setCachedData(cacheKey, [...cached, optimistic]);
       if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'insert', data: payload }); return; }
       const { error } = await supabase.from('customers').insert(payload);
       if (error) throw error;
@@ -81,6 +85,10 @@ export function useCustomerMutations() {
 
   const update = useMutation({
     mutationFn: async ({ id, ...c }: { id: string } & Partial<DbCustomer>) => {
+      const cacheKey = `customers_${farmId}`;
+      const cached = getCachedData<DbCustomer>(cacheKey) || [];
+      const idx = cached.findIndex(x => x.id === id);
+      if (idx >= 0) { cached[idx] = { ...cached[idx], ...c }; setCachedData(cacheKey, cached); }
       if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'update', data: { id, ...c } }); return; }
       const { error } = await supabase.from('customers').update(c).eq('id', id);
       if (error) throw error;
@@ -90,6 +98,9 @@ export function useCustomerMutations() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
+      const cacheKey = `customers_${farmId}`;
+      const cached = getCachedData<DbCustomer>(cacheKey) || [];
+      setCachedData(cacheKey, cached.filter(x => x.id !== id));
       if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'delete', data: { id } }); return; }
       const { error } = await supabase.from('customers').delete().eq('id', id);
       if (error) throw error;
