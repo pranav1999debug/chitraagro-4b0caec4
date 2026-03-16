@@ -287,13 +287,9 @@ export default function Operations() {
           </button>
         )}
 
-        <div className="flex items-start gap-2">
-          <div className="flex-1">
-            <VoiceCommandButton customers={customers} timeGroup={timeGroup} dateKey={dateKey} onApply={handleVoiceApply} />
-          </div>
-          <div className="flex-1">
-            <ImageUploadButton customers={customers} onApply={handleVoiceApply} />
-          </div>
+        <div className="flex items-start gap-3">
+          <VoiceCommandButton customers={customers} timeGroup={timeGroup} dateKey={dateKey} onApply={handleVoiceApply} />
+          <ImageUploadButton customers={customers} onApply={handleVoiceApply} />
         </div>
 
         <div className="stat-card">

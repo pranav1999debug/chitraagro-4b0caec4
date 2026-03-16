@@ -129,19 +129,19 @@ export default function ImageUploadButton({ customers, onApply }: Props) {
 
   return (
     <>
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+      <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
       
       <button
         onClick={() => fileRef.current?.click()}
         disabled={parsing}
-        className="relative group w-full rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all py-3 px-4 flex flex-col items-center gap-1.5"
+        className={`p-3 rounded-full shadow-lg transition-all ${
+          parsing
+            ? 'bg-primary/70 text-primary-foreground'
+            : 'bg-primary text-primary-foreground'
+        } disabled:opacity-50`}
+        title="Scan Dairy Page"
       >
-        <div className={`w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center ${parsing ? '' : 'group-hover:scale-110 transition-transform'}`}>
-          {parsing ? <Loader2 size={20} className="animate-spin text-primary" /> : <Camera size={20} className="text-primary" />}
-        </div>
-        <span className="font-heading text-xs font-semibold text-foreground">
-          {parsing ? 'Reading...' : 'Scan Dairy Page'}
-        </span>
+        {parsing ? <Loader2 size={20} className="animate-spin" /> : <Camera size={20} />}
       </button>
 
       {showPopup && (
