@@ -5,7 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, getNepaliMonthName, getDaysInMonth } from '@/lib/nepaliDate';
-import { useCustomers, useAllTransactions, usePayments } from '@/hooks/useFarmData';
+import { useCustomers, useCustomerMonthTransactions, usePayments } from '@/hooks/useFarmData';
 import { Download, MessageCircle, ArrowLeft } from 'lucide-react';
 
 export default function CustomerBill() {
