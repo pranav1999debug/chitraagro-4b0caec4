@@ -123,16 +123,24 @@ export function useTransactions(dateKey?: string) {
     queryKey: ['transactions', farmId, dateKey],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<DbTransaction>(cacheKey);
       if (!isOnline()) {
-        return getCachedData<DbTransaction>(cacheKey) || [];
+        return cached || [];
       }
-      let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
-      if (dateKey) q = q.eq('date_key', dateKey);
-      const { data, error } = await q;
-      if (error) throw error;
-      const result = (data || []) as DbTransaction[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
+        if (dateKey) q = q.eq('date_key', dateKey);
+        const { data, error } = await q;
+        if (error) throw error;
+        const result = (data || []) as DbTransaction[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId,
     placeholderData: () => {
