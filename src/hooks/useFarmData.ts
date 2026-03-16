@@ -29,6 +29,7 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
         if (error) throw error;
         const result = (data || []) as T[];
         setCachedData(cacheKey, result);
+        setLastSyncTimestamp();
         return result;
       } catch (error) {
         if (cached) return cached;
