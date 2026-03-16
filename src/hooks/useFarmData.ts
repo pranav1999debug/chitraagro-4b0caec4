@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Database } from '@/integrations/supabase/types';
 import { getCachedData, setCachedData, isOnline, addPendingMutation } from '@/hooks/useOfflineCache';
+import { setLastSyncTimestamp } from '@/components/OfflineIndicator';
 
 type TableName = keyof Database['public']['Tables'];
 
