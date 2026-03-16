@@ -167,6 +167,44 @@ export function useAllTransactions() {
   return useFarmQuery<DbTransaction>('all-transactions', 'transactions');
 }
 
+// Fetch transactions for a specific customer in a specific month (no row limit issues)
+export function useCustomerMonthTransactions(customerId: string | undefined, yearMonth: string) {
+  const { farmId } = useAuth();
+  const cacheKey = `customer-tx_${farmId}_${customerId}_${yearMonth}`;
+
+  return useQuery<DbTransaction[]>({
+    queryKey: ['customer-transactions', farmId, customerId, yearMonth],
+    queryFn: async () => {
+      if (!farmId || !customerId) return [];
+
+      const cached = getCachedData<DbTransaction>(cacheKey);
+      if (!isOnline()) return cached || [];
+
+      try {
+        const { data, error } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('farm_id', farmId)
+          .eq('customer_id', customerId)
+          .like('date_key', `${yearMonth}%`);
+        if (error) throw error;
+        const result = (data || []) as DbTransaction[];
+        setCachedData(cacheKey, result);
+        setLastSyncTimestamp();
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
+    },
+    enabled: !!farmId && !!customerId,
+    placeholderData: () => {
+      if (!farmId || !customerId) return undefined;
+      return getCachedData<DbTransaction>(cacheKey) || undefined;
+    },
+  });
+}
+
 export function useTransactionMutations() {
   const qc = useQueryClient();
   const { farmId } = useAuth();
@@ -224,6 +262,7 @@ export function useTransactionMutations() {
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['all-transactions'] });
+    qc.invalidateQueries({ queryKey: ['customer-transactions'] });
   };
 
   return { add, update, remove, invalidateAll };
