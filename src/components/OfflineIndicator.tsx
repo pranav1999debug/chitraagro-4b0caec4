@@ -1,16 +1,35 @@
 import { useState, useEffect } from 'react';
-import { WifiOff, Wifi, CloudOff, Upload } from 'lucide-react';
+import { WifiOff, Wifi, Upload, Clock } from 'lucide-react';
 import { getPendingMutations } from '@/hooks/useOfflineCache';
+
+const LAST_SYNC_KEY = 'chitra_last_sync_ts';
+
+export function setLastSyncTimestamp() {
+  localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+}
+
+function getLastSyncTimestamp(): number | null {
+  const ts = localStorage.getItem(LAST_SYNC_KEY);
+  return ts ? parseInt(ts) : null;
+}
+
+function formatTimeAgo(ts: number): string {
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
 
 export default function OfflineIndicator() {
   const [online, setOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
   const [showSynced, setShowSynced] = useState(false);
+  const [lastSync, setLastSync] = useState<number | null>(getLastSyncTimestamp());
 
   useEffect(() => {
     const goOnline = () => {
       setOnline(true);
-      // Show "synced" briefly when coming back online
       setShowSynced(true);
       setTimeout(() => setShowSynced(false), 3000);
     };
@@ -24,12 +43,13 @@ export default function OfflineIndicator() {
     };
   }, []);
 
-  // Poll pending mutations count
   useEffect(() => {
     const interval = setInterval(() => {
       setPendingCount(getPendingMutations().length);
+      setLastSync(getLastSyncTimestamp());
     }, 2000);
     setPendingCount(getPendingMutations().length);
+    setLastSync(getLastSyncTimestamp());
     return () => clearInterval(interval);
   }, []);
 
@@ -51,6 +71,11 @@ export default function OfflineIndicator() {
             {pendingCount > 0 && (
               <span className="bg-white/20 rounded-full px-2 py-0.5 text-[10px]">
                 {pendingCount} pending
+              </span>
+            )}
+            {lastSync && (
+              <span className="bg-white/10 rounded-full px-2 py-0.5 text-[10px] flex items-center gap-0.5">
+                <Clock size={8} /> {formatTimeAgo(lastSync)}
               </span>
             )}
           </>
