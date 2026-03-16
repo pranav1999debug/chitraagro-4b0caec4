@@ -39,7 +39,7 @@ export default function CustomerBill() {
       }
     }
     return records;
-  }, [allTransactions, customerId, yearMonth, daysInMonth, customer]);
+  }, [customerTransactions, yearMonth, daysInMonth, customer]);
 
   const monthPayments = useMemo(() => {
     if (!customer) return [];
