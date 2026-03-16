@@ -18,7 +18,7 @@ export default function CustomerBill() {
   const [month, setMonth] = useState(today.month);
 
   const { data: customers = [] } = useCustomers();
-  const { data: allTransactions = [] } = useAllTransactions();
+  const { data: customerTransactions = [] } = useCustomerMonthTransactions(customerId, yearMonth);
   const { data: allPayments = [] } = usePayments();
 
   const customer = customers.find(c => c.id === customerId);
