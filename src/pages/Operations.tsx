@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
 import { useCustomers, useTransactions, useTransactionMutations, type DbTransaction, type DbCustomer } from '@/hooks/useFarmData';
+import ImageUploadButton from '@/components/ImageUploadButton';
 import { MessageCircle, BarChart3, Loader2, Save, Plus } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
@@ -286,9 +287,12 @@ export default function Operations() {
           </button>
         )}
 
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-2">
           <div className="flex-1">
             <VoiceCommandButton customers={customers} timeGroup={timeGroup} dateKey={dateKey} onApply={handleVoiceApply} />
+          </div>
+          <div className="flex-1">
+            <ImageUploadButton customers={customers} onApply={handleVoiceApply} />
           </div>
         </div>
 

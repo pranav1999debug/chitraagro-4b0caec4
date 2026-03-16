@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import type { Database } from '@/integrations/supabase/types';
 import { getCachedData, setCachedData, isOnline, addPendingMutation } from '@/hooks/useOfflineCache';
+import { setLastSyncTimestamp } from '@/components/OfflineIndicator';
 
 type TableName = keyof Database['public']['Tables'];
 
@@ -28,6 +29,7 @@ function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) =
         if (error) throw error;
         const result = (data || []) as T[];
         setCachedData(cacheKey, result);
+        setLastSyncTimestamp();
         return result;
       } catch (error) {
         if (cached) return cached;
