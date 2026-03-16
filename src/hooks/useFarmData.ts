@@ -370,6 +370,24 @@ export function useAttendanceMutations() {
 
   const upsert = useMutation({
     mutationFn: async (a: { staff_id: string; date_key: string; present: boolean; advance_amount: number }) => {
+      const payload = { ...a, farm_id: farmId! };
+      
+      // Optimistic local cache update
+      const cacheKey = `attendance_${farmId}_${a.staff_id}_${a.date_key.substring(0, 7)}`;
+      const cached = getCachedData<DbAttendance>(cacheKey) || [];
+      const existingIdx = cached.findIndex(c => c.staff_id === a.staff_id && c.date_key === a.date_key);
+      if (existingIdx >= 0) {
+        cached[existingIdx] = { ...cached[existingIdx], ...a };
+      } else {
+        cached.push({ id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...a });
+      }
+      setCachedData(cacheKey, cached);
+
+      if (!isOnline()) {
+        addPendingMutation({ table: 'attendance', action: 'insert', data: payload });
+        return;
+      }
+
       const { data: existing } = await supabase
         .from('attendance')
         .select('id')
@@ -384,7 +402,7 @@ export function useAttendanceMutations() {
         if (error) throw error;
       } else {
         const { error } = await supabase.from('attendance')
-          .insert({ ...a, farm_id: farmId! });
+          .insert(payload);
         if (error) throw error;
       }
     },
