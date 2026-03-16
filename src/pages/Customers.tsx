@@ -1,19 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AppHeader from '@/components/AppHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
-import { getAvailableYears, getNepaliMonthName, getTodayNepali } from '@/lib/nepaliDate';
 import {
-  useAllTransactions,
   useCustomers,
   useCustomerMutations,
-  useTransactionMutations,
   type DbCustomer,
-  type DbTransaction,
 } from '@/hooks/useFarmData';
-import { Search, Plus, Trash2, Edit, X, ToggleLeft, ToggleRight, FileSpreadsheet, Save, Loader2 } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, X, ToggleLeft, ToggleRight, FileSpreadsheet } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 const emptyForm = {
@@ -29,21 +26,13 @@ const emptyForm = {
   default_qty_evening: 0,
 };
 
-interface SheetDraft {
-  quantity: string;
-  price: string;
-  dirty: boolean;
-}
-
 export default function Customers() {
   const { lang } = useApp();
   const { role } = useAuth();
-  const today = getTodayNepali();
+  const navigate = useNavigate();
 
   const { data: customers = [], isLoading } = useCustomers();
-  const { data: allTransactions = [] } = useAllTransactions();
   const { add, update, remove } = useCustomerMutations();
-  const { update: updateTransaction } = useTransactionMutations();
 
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
@@ -52,37 +41,8 @@ export default function Customers() {
   const [showInactive, setShowInactive] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const [sheetYear, setSheetYear] = useState(today.year);
-  const [sheetMonth, setSheetMonth] = useState(today.month);
-  const [openSheetCustomerId, setOpenSheetCustomerId] = useState<string | null>(null);
-  const [editSheetCustomerId, setEditSheetCustomerId] = useState<string | null>(null);
-  const [sheetDrafts, setSheetDrafts] = useState<Record<string, SheetDraft>>({});
-  const [sheetSaving, setSheetSaving] = useState(false);
-
   const canEdit = role === 'owner' || role === 'manager';
   const canDelete = role === 'owner';
-
-  const yearMonth = `${sheetYear}-${String(sheetMonth).padStart(2, '0')}`;
-  const monthLabel = `${getNepaliMonthName(sheetMonth, lang === 'hi' ? 'np' : 'en')} ${sheetYear}`;
-
-  const monthTransactionsByCustomer = useMemo(() => {
-    const map: Record<string, DbTransaction[]> = {};
-    allTransactions
-      .filter(tx => tx.date_key.startsWith(yearMonth))
-      .forEach(tx => {
-        if (!map[tx.customer_id]) map[tx.customer_id] = [];
-        map[tx.customer_id].push(tx);
-      });
-
-    Object.values(map).forEach(list => {
-      list.sort((a, b) => {
-        if (a.date_key === b.date_key) return a.time_group.localeCompare(b.time_group);
-        return a.date_key.localeCompare(b.date_key);
-      });
-    });
-
-    return map;
-  }, [allTransactions, yearMonth]);
 
   const filtered = customers.filter(c => {
     if (!showInactive && c.is_active === false) return false;
@@ -91,106 +51,6 @@ export default function Customers() {
 
   const morningCustomers = filtered.filter(c => c.time_group === 'morning' || c.time_group === 'both');
   const eveningCustomers = filtered.filter(c => c.time_group === 'evening' || c.time_group === 'both');
-
-  const initializeSheetDrafts = useCallback((customerId: string) => {
-    const rows = monthTransactionsByCustomer[customerId] || [];
-    const next: Record<string, SheetDraft> = {};
-    rows.forEach(tx => {
-      next[tx.id] = {
-        quantity: String(Number(tx.quantity) || 0),
-        price: String(Number(tx.price) || 0),
-        dirty: false,
-      };
-    });
-    setSheetDrafts(next);
-  }, [monthTransactionsByCustomer]);
-
-  const openOrCloseSheet = (customerId: string) => {
-    if (openSheetCustomerId === customerId) {
-      setOpenSheetCustomerId(null);
-      setEditSheetCustomerId(null);
-      setSheetDrafts({});
-      return;
-    }
-
-    setOpenSheetCustomerId(customerId);
-    setEditSheetCustomerId(null);
-    initializeSheetDrafts(customerId);
-  };
-
-  const handleSheetInput = (txId: string, field: keyof Omit<SheetDraft, 'dirty'>, value: string) => {
-    setSheetDrafts(prev => ({
-      ...prev,
-      [txId]: {
-        ...(prev[txId] || { quantity: '', price: '', dirty: false }),
-        [field]: value,
-        dirty: true,
-      },
-    }));
-  };
-
-  const saveSheet = async (customerId: string) => {
-    const rows = monthTransactionsByCustomer[customerId] || [];
-    const dirtyRows = rows.filter(r => sheetDrafts[r.id]?.dirty);
-
-    if (dirtyRows.length === 0) {
-      setEditSheetCustomerId(null);
-      return;
-    }
-
-    setSheetSaving(true);
-    let saved = 0;
-    let failed = 0;
-
-    await Promise.all(
-      dirtyRows.map(async row => {
-        const draft = sheetDrafts[row.id];
-        const quantity = Number(draft?.quantity) || 0;
-        const price = Number(draft?.price) || 0;
-        const mila = Number(row.mila) || 0;
-        const total = quantity * price - mila;
-
-        try {
-          await updateTransaction.mutateAsync({ id: row.id, quantity, price, total });
-          saved++;
-        } catch {
-          failed++;
-        }
-      })
-    );
-
-    setSheetSaving(false);
-    setEditSheetCustomerId(null);
-
-    setSheetDrafts(prev => {
-      const next = { ...prev };
-      dirtyRows.forEach(row => {
-        if (next[row.id]) next[row.id] = { ...next[row.id], dirty: false };
-      });
-      return next;
-    });
-
-    if (failed > 0) {
-      toast({ title: '⚠️ Partial Save', description: `${saved} rows saved, ${failed} failed`, variant: 'destructive' });
-      return;
-    }
-
-    toast({ title: '✅ Saved', description: `${saved} rows updated` });
-  };
-
-  const toggleSheetEdit = (customerId: string) => {
-    if (editSheetCustomerId !== customerId) {
-      setEditSheetCustomerId(customerId);
-      initializeSheetDrafts(customerId);
-      return;
-    }
-    saveSheet(customerId);
-  };
-
-  const getMonthTotalQty = (customerId: string) => {
-    const rows = monthTransactionsByCustomer[customerId] || [];
-    return rows.reduce((s, row) => s + (Number(row.quantity) || 0), 0);
-  };
 
   const handleSave = () => {
     if (!form.name.trim()) return;
@@ -270,22 +130,6 @@ export default function Customers() {
           )}
         </div>
 
-        <div className="stat-card">
-          <p className="text-xs text-muted-foreground mb-2">Monthly quantity sheet</p>
-          <div className="grid grid-cols-2 gap-2">
-            <select className="input-field text-sm py-2" value={sheetYear} onChange={e => setSheetYear(Number(e.target.value))}>
-              {getAvailableYears().map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-            <select className="input-field text-sm py-2" value={sheetMonth} onChange={e => setSheetMonth(Number(e.target.value))}>
-              {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                <option key={m} value={m}>{getNepaliMonthName(m, lang === 'hi' ? 'np' : 'en')}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
         <div className="relative">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -309,56 +153,28 @@ export default function Customers() {
           <>
             <p className="text-center text-muted-foreground text-xs font-body">{t('common.morning', lang)}: {morningCustomers.length}</p>
             {morningCustomers.map(c => (
-              <div key={c.id} className="space-y-2">
-                <CustomerCard
-                  customer={c}
-                  lang={lang}
-                  onEdit={canEdit ? handleEdit : undefined}
-                  onDelete={canDelete ? id => setDeleteConfirm(id) : undefined}
-                  onToggle={canEdit ? toggleActive : undefined}
-                />
-                <CustomerMonthlySheet
-                  customer={c}
-                  monthLabel={monthLabel}
-                  rows={monthTransactionsByCustomer[c.id] || []}
-                  totalQty={getMonthTotalQty(c.id)}
-                  isOpen={openSheetCustomerId === c.id}
-                  isEditing={editSheetCustomerId === c.id}
-                  isSaving={sheetSaving && editSheetCustomerId === c.id}
-                  canEdit={canEdit}
-                  drafts={sheetDrafts}
-                  onToggleOpen={() => openOrCloseSheet(c.id)}
-                  onToggleEdit={() => toggleSheetEdit(c.id)}
-                  onFieldChange={handleSheetInput}
-                />
-              </div>
+              <CustomerCard
+                key={c.id}
+                customer={c}
+                lang={lang}
+                onEdit={canEdit ? handleEdit : undefined}
+                onDelete={canDelete ? id => setDeleteConfirm(id) : undefined}
+                onToggle={canEdit ? toggleActive : undefined}
+                onOpenSheet={() => navigate(`/customers/${c.id}/sheet`)}
+              />
             ))}
 
             <p className="text-center text-muted-foreground text-xs font-body mt-4">{t('common.evening', lang)}: {eveningCustomers.length}</p>
             {eveningCustomers.map(c => (
-              <div key={c.id} className="space-y-2">
-                <CustomerCard
-                  customer={c}
-                  lang={lang}
-                  onEdit={canEdit ? handleEdit : undefined}
-                  onDelete={canDelete ? id => setDeleteConfirm(id) : undefined}
-                  onToggle={canEdit ? toggleActive : undefined}
-                />
-                <CustomerMonthlySheet
-                  customer={c}
-                  monthLabel={monthLabel}
-                  rows={monthTransactionsByCustomer[c.id] || []}
-                  totalQty={getMonthTotalQty(c.id)}
-                  isOpen={openSheetCustomerId === c.id}
-                  isEditing={editSheetCustomerId === c.id}
-                  isSaving={sheetSaving && editSheetCustomerId === c.id}
-                  canEdit={canEdit}
-                  drafts={sheetDrafts}
-                  onToggleOpen={() => openOrCloseSheet(c.id)}
-                  onToggleEdit={() => toggleSheetEdit(c.id)}
-                  onFieldChange={handleSheetInput}
-                />
-              </div>
+              <CustomerCard
+                key={c.id}
+                customer={c}
+                lang={lang}
+                onEdit={canEdit ? handleEdit : undefined}
+                onDelete={canDelete ? id => setDeleteConfirm(id) : undefined}
+                onToggle={canEdit ? toggleActive : undefined}
+                onOpenSheet={() => navigate(`/customers/${c.id}/sheet`)}
+              />
             ))}
           </>
         )}
@@ -438,157 +254,20 @@ export default function Customers() {
   );
 }
 
-function CustomerMonthlySheet({
-  customer,
-  monthLabel,
-  rows,
-  totalQty,
-  isOpen,
-  isEditing,
-  isSaving,
-  canEdit,
-  drafts,
-  onToggleOpen,
-  onToggleEdit,
-  onFieldChange,
-}: {
-  customer: DbCustomer;
-  monthLabel: string;
-  rows: DbTransaction[];
-  totalQty: number;
-  isOpen: boolean;
-  isEditing: boolean;
-  isSaving: boolean;
-  canEdit: boolean;
-  drafts: Record<string, SheetDraft>;
-  onToggleOpen: () => void;
-  onToggleEdit: () => void;
-  onFieldChange: (txId: string, field: keyof Omit<SheetDraft, 'dirty'>, value: string) => void;
-}) {
-  const draftAwareTotals = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        const qty = Number(drafts[row.id]?.quantity ?? row.quantity) || 0;
-        const rate = Number(drafts[row.id]?.price ?? row.price) || 0;
-        const amount = qty * rate - (Number(row.mila) || 0);
-        return { qty: acc.qty + qty, amount: acc.amount + amount };
-      },
-      { qty: 0, amount: 0 }
-    );
-  }, [rows, drafts]);
-
-  return (
-    <div className="stat-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs text-muted-foreground">{monthLabel}</p>
-          <p className="text-sm font-heading font-semibold">Qty: {totalQty} L</p>
-        </div>
-        <button onClick={onToggleOpen} className="rounded-md border border-border px-3 py-1.5 text-xs font-heading text-foreground flex items-center gap-1">
-          <FileSpreadsheet size={13} />
-          {isOpen ? 'Hide Sheet' : 'Open Sheet'}
-        </button>
-      </div>
-
-      {isOpen && (
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">Editable transaction sheet</p>
-            {canEdit && rows.length > 0 && (
-              <button
-                onClick={onToggleEdit}
-                disabled={isSaving}
-                className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-xs font-heading flex items-center gap-1 disabled:opacity-60"
-              >
-                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                {isEditing ? 'Save Sheet' : 'Edit Sheet'}
-              </button>
-            )}
-          </div>
-
-          {rows.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-2">No transactions in selected month.</p>
-          ) : (
-            <div className="overflow-x-auto -mx-3 px-3">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="data-table-header text-left py-2">Date</th>
-                    <th className="data-table-header text-left py-2">Shift</th>
-                    <th className="data-table-header text-center py-2">Qty</th>
-                    <th className="data-table-header text-center py-2">Rate</th>
-                    <th className="data-table-header text-right py-2">Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(row => {
-                    const qtyValue = drafts[row.id]?.quantity ?? String(row.quantity ?? 0);
-                    const rateValue = drafts[row.id]?.price ?? String(row.price ?? 0);
-                    const rowAmount = (Number(qtyValue) || 0) * (Number(rateValue) || 0) - (Number(row.mila) || 0);
-                    return (
-                      <tr key={row.id} className="border-b border-border/50">
-                        <td className="py-2">{row.date_key.split('-').reverse().join('-')}</td>
-                        <td className="py-2 capitalize">{row.time_group}</td>
-                        <td className="py-2 text-center">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              value={qtyValue}
-                              onChange={e => onFieldChange(row.id, 'quantity', e.target.value)}
-                              className="w-16 rounded border border-border bg-card px-2 py-1 text-center font-number"
-                            />
-                          ) : (
-                            <span className="font-number">{Number(qtyValue) || 0}</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-center">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              value={rateValue}
-                              onChange={e => onFieldChange(row.id, 'price', e.target.value)}
-                              className="w-16 rounded border border-border bg-card px-2 py-1 text-center font-number"
-                            />
-                          ) : (
-                            <span className="font-number">₹{Number(rateValue) || 0}</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-right font-number">₹{rowAmount}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={2} className="pt-2 text-muted-foreground">Total</td>
-                    <td className="pt-2 text-center font-number font-semibold">{draftAwareTotals.qty}</td>
-                    <td></td>
-                    <td className="pt-2 text-right font-number font-semibold">₹{draftAwareTotals.amount}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function CustomerCard({
   customer,
   lang,
   onEdit,
   onDelete,
   onToggle,
+  onOpenSheet,
 }: {
   customer: DbCustomer;
   lang: 'en' | 'hi';
   onEdit?: (c: DbCustomer) => void;
   onDelete?: (id: string) => void;
   onToggle?: (c: DbCustomer) => void;
+  onOpenSheet: () => void;
 }) {
   const initials = customer.name.slice(0, 2).toUpperCase();
   const inactive = customer.is_active === false;
@@ -601,19 +280,22 @@ function CustomerCard({
         </p>
         <p className="text-[10px] text-muted-foreground">{customer.milk_type} · ₹{customer.purchase_rate}/L</p>
       </div>
-      <div className="flex gap-1">
+      <div className="flex gap-0.5 items-center">
         {onToggle && (
-          <button onClick={() => onToggle(customer)} className="p-2 text-muted-foreground">
+          <button onClick={() => onToggle(customer)} className="p-1.5 text-muted-foreground">
             {inactive ? <ToggleLeft size={16} /> : <ToggleRight size={16} className="text-primary" />}
           </button>
         )}
+        <button onClick={onOpenSheet} className="p-1.5 text-primary" title="Open Sheet">
+          <FileSpreadsheet size={16} />
+        </button>
         {onEdit && (
-          <button onClick={() => onEdit(customer)} className="p-2 text-muted-foreground">
+          <button onClick={() => onEdit(customer)} className="p-1.5 text-muted-foreground">
             <Edit size={16} />
           </button>
         )}
         {onDelete && (
-          <button onClick={() => onDelete(customer.id)} className="p-2 text-destructive">
+          <button onClick={() => onDelete(customer.id)} className="p-1.5 text-destructive">
             <Trash2 size={16} />
           </button>
         )}
