@@ -330,19 +330,27 @@ export function useAttendance(staffId: string, yearMonth: string) {
     queryKey: ['attendance', farmId, staffId, yearMonth],
     queryFn: async () => {
       if (!farmId) return [];
+
+      const cached = getCachedData<DbAttendance>(cacheKey);
       if (!isOnline()) {
-        return getCachedData<DbAttendance>(cacheKey) || [];
+        return cached || [];
       }
-      const { data, error } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('farm_id', farmId)
-        .eq('staff_id', staffId)
-        .like('date_key', `${yearMonth}%`);
-      if (error) throw error;
-      const result = (data || []) as DbAttendance[];
-      setCachedData(cacheKey, result);
-      return result;
+
+      try {
+        const { data, error } = await supabase
+          .from('attendance')
+          .select('*')
+          .eq('farm_id', farmId)
+          .eq('staff_id', staffId)
+          .like('date_key', `${yearMonth}%`);
+        if (error) throw error;
+        const result = (data || []) as DbAttendance[];
+        setCachedData(cacheKey, result);
+        return result;
+      } catch (error) {
+        if (cached) return cached;
+        throw error;
+      }
     },
     enabled: !!farmId && !!staffId,
     placeholderData: () => {
