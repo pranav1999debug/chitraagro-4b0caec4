@@ -262,6 +262,7 @@ export function useTransactionMutations() {
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['transactions'] });
     qc.invalidateQueries({ queryKey: ['all-transactions'] });
+    qc.invalidateQueries({ queryKey: ['customer-transactions'] });
   };
 
   return { add, update, remove, invalidateAll };
