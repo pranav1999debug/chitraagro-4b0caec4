@@ -134,10 +134,14 @@ export default function ImageUploadButton({ customers, onApply }: Props) {
       <button
         onClick={() => fileRef.current?.click()}
         disabled={parsing}
-        className="action-button flex items-center justify-center gap-2 w-full"
+        className="relative group w-full rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all py-3 px-4 flex flex-col items-center gap-1.5"
       >
-        {parsing ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
-        {parsing ? 'Reading image...' : '📷 Upload Dairy Page'}
+        <div className={`w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center ${parsing ? '' : 'group-hover:scale-110 transition-transform'}`}>
+          {parsing ? <Loader2 size={20} className="animate-spin text-primary" /> : <Camera size={20} className="text-primary" />}
+        </div>
+        <span className="font-heading text-xs font-semibold text-foreground">
+          {parsing ? 'Reading...' : 'Scan Dairy Page'}
+        </span>
       </button>
 
       {showPopup && (
