@@ -122,8 +122,8 @@ export default function CustomerSheet() {
   const handleQtyChange = (idx: number, value: string) => {
     setDrafts(prev => {
       const rows = [...(prev || buildRows())];
-      const rate = Number(rows[idx].rate) || 0;
-      const qty = Number(value) || 0;
+      const rate = parseFloat(rows[idx].rate) || 0;
+      const qty = parseFloat(value) || 0;
       rows[idx] = { ...rows[idx], quantity: value, price: qty * rate, dirty: true };
       return rows;
     });
@@ -132,8 +132,8 @@ export default function CustomerSheet() {
   const handleRateChange = (idx: number, value: string) => {
     setDrafts(prev => {
       const rows = [...(prev || buildRows())];
-      const qty = Number(rows[idx].quantity) || 0;
-      const rate = Number(value) || 0;
+      const qty = parseFloat(rows[idx].quantity) || 0;
+      const rate = parseFloat(value) || 0;
       rows[idx] = { ...rows[idx], rate: value, price: qty * rate, dirty: true };
       return rows;
     });
@@ -150,8 +150,8 @@ export default function CustomerSheet() {
     try {
       await Promise.all(
         rowsToSave.map(async (row) => {
-          const qty = Number(row.quantity) || 0;
-          const rate = Number(row.rate) || 0;
+          const qty = parseFloat(row.quantity) || 0;
+          const rate = parseFloat(row.rate) || 0;
           const total = qty * rate;
 
           try {
@@ -285,7 +285,8 @@ export default function CustomerSheet() {
                         <input
                           type="number"
                           inputMode="decimal"
-                          step="0.5"
+                          step="0.1"
+                          min="0"
                           value={row.quantity}
                           onChange={e => handleQtyChange(idx, e.target.value)}
                           className="w-16 rounded border border-border bg-card px-2 py-1.5 text-center font-number text-xs"
