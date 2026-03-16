@@ -18,11 +18,11 @@ export default function CustomerBill() {
   const [month, setMonth] = useState(today.month);
 
   const { data: customers = [] } = useCustomers();
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const { data: customerTransactions = [] } = useCustomerMonthTransactions(customerId, yearMonth);
   const { data: allPayments = [] } = usePayments();
 
   const customer = customers.find(c => c.id === customerId);
-  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = getDaysInMonth(year, month);
 
   const dailyRecords = useMemo(() => {
