@@ -17,6 +17,7 @@ interface DraftEntry {
   price: string;
   mila: string;
   dirty: boolean;
+  filled: boolean;
 }
 
 export default function Operations() {
@@ -30,7 +31,6 @@ export default function Operations() {
   const [saving, setSaving] = useState(false);
   const [activeQtyRow, setActiveQtyRow] = useState<string | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
-  // Track whether we're in the middle of saving to prevent useEffect from resetting drafts
   const savingRef = useRef(false);
 
   const dateKey = nepaliDateToKey(date);
@@ -40,62 +40,55 @@ export default function Operations() {
 
   const canEdit = role === 'owner' || role === 'manager';
 
-  // Only active customers for the selected time group
-  const filteredCustomers = useMemo(() =>
-    customers.filter(c => c.is_active !== false && (c.time_group === timeGroup || c.time_group === 'both')),
+  const filteredCustomers = useMemo(
+    () => customers.filter(c => c.is_active !== false && (c.time_group === timeGroup || c.time_group === 'both')),
     [customers, timeGroup]
   );
 
   const txMap = useMemo(() => {
     const map: Record<string, DbTransaction> = {};
-    transactions.filter(tx => tx.time_group === timeGroup).forEach(tx => { map[tx.customer_id] = tx; });
+    transactions
+      .filter(tx => tx.time_group === timeGroup)
+      .forEach(tx => {
+        map[tx.customer_id] = tx;
+      });
     return map;
   }, [transactions, timeGroup]);
 
-  // Check if ANY transactions exist for this date+timeGroup (means sheet was saved before)
-  const hasAnySavedTransactions = useMemo(() => {
-    return transactions.some(tx => tx.time_group === timeGroup);
-  }, [transactions, timeGroup]);
+  const isSheetFullyFilled = useMemo(
+    () => filteredCustomers.length > 0 && filteredCustomers.every(c => !!txMap[c.id]),
+    [filteredCustomers, txMap]
+  );
 
-  // Initialize drafts from saved data
-  // If sheet was saved before: show saved values (or blank for unsaved customers)
-  // If sheet is fresh (never saved): show defaults
   useEffect(() => {
-    // Don't reset drafts while saving
     if (savingRef.current) return;
 
     const newDrafts: Record<string, DraftEntry> = {};
     filteredCustomers.forEach(c => {
       const tx = txMap[c.id];
       if (tx) {
-        // Transaction exists — show saved values
         newDrafts[c.id] = {
-          quantity: Number(tx.quantity) > 0 ? String(tx.quantity) : '',
-          price: String(tx.price),
-          mila: Number(tx.mila) > 0 ? String(tx.mila) : '',
+          quantity: String(Number(tx.quantity) || 0),
+          price: String(Number(tx.price) || c.purchase_rate || 0),
+          mila: String(Number(tx.mila) || 0),
           dirty: false,
+          filled: true,
         };
-      } else if (!hasAnySavedTransactions) {
-        // Fresh sheet (never saved) — show defaults
-        const defaultQty = timeGroup === 'morning' ? c.default_qty_morning : c.default_qty_evening;
-        newDrafts[c.id] = {
-          quantity: defaultQty > 0 ? String(defaultQty) : '',
-          price: c.purchase_rate ? String(c.purchase_rate) : '',
-          mila: '',
-          dirty: defaultQty > 0,
-        };
-      } else {
-        // Sheet was saved before, but this customer had no entry — show blank (no defaults)
-        newDrafts[c.id] = {
-          quantity: '',
-          price: c.purchase_rate ? String(c.purchase_rate) : '',
-          mila: '',
-          dirty: false,
-        };
+        return;
       }
+
+      const defaultQty = timeGroup === 'morning' ? Number(c.default_qty_morning) || 0 : Number(c.default_qty_evening) || 0;
+      newDrafts[c.id] = {
+        quantity: defaultQty > 0 ? String(defaultQty) : '',
+        price: String(Number(c.purchase_rate) || 0),
+        mila: '',
+        dirty: true,
+        filled: false,
+      };
     });
+
     setDrafts(newDrafts);
-  }, [filteredCustomers, txMap, timeGroup, hasAnySavedTransactions]);
+  }, [filteredCustomers, txMap, timeGroup]);
 
   const totalLiters = useMemo(() => {
     return filteredCustomers.reduce((s, c) => {
@@ -117,71 +110,98 @@ export default function Operations() {
 
   const isLoadingData = txLoading || txFetching;
   const dirtyCount = Object.values(drafts).filter(d => d.dirty).length;
+  const unfilledCount = Object.values(drafts).filter(d => !d.filled).length;
+  const allDraftsInitialized = Object.keys(drafts).length === filteredCustomers.length;
+  const shouldShowSaveAll = canEdit && allDraftsInitialized && !isLoadingData && (dirtyCount > 0 || !isSheetFullyFilled || unfilledCount > 0);
 
-  const handleFieldInput = (customerId: string, field: keyof DraftEntry, value: string) => {
+  const handleFieldInput = (customerId: string, field: keyof Omit<DraftEntry, 'dirty' | 'filled'>, value: string) => {
     setDrafts(prev => ({
       ...prev,
-      [customerId]: { ...prev[customerId], [field]: value, dirty: true }
+      [customerId]: {
+        ...(prev[customerId] || { quantity: '', price: '', mila: '', dirty: false, filled: false }),
+        [field]: value,
+        dirty: true,
+        filled: false,
+      },
     }));
   };
 
   const handleQuickAdd = (customerId: string, amount: number) => {
     setDrafts(prev => {
-      const current = prev[customerId] || { quantity: '', price: '', mila: '', dirty: false };
+      const current = prev[customerId] || { quantity: '', price: '', mila: '', dirty: false, filled: false };
       const currentQty = Number(current.quantity) || 0;
       return {
         ...prev,
-        [customerId]: { ...current, quantity: String(currentQty + amount), dirty: true }
+        [customerId]: {
+          ...current,
+          quantity: String(currentQty + amount),
+          dirty: true,
+          filled: false,
+        },
       };
     });
   };
 
   const handleSaveAll = useCallback(async () => {
     if (!canEdit || saving) return;
+
     setSaving(true);
     savingRef.current = true;
     let saved = 0;
     let failed = 0;
 
-    // Collect all mutations to execute
     const mutations: Promise<any>[] = [];
 
     for (const customer of filteredCustomers) {
       const draft = drafts[customer.id];
-      if (!draft?.dirty) continue;
+      if (!draft) continue;
+
+      const existing = txMap[customer.id];
+      const shouldSaveThisRow = draft.dirty || !draft.filled || !existing;
+      if (!shouldSaveThisRow) continue;
 
       const qty = Number(draft.quantity) || 0;
-      const price = Number(draft.price) || customer.purchase_rate;
+      const price = Number(draft.price) || Number(customer.purchase_rate) || 0;
       const mila = Number(draft.mila) || 0;
       const total = qty * price - mila;
-      const existing = txMap[customer.id];
 
       if (existing) {
         mutations.push(
-          update.mutateAsync({ id: existing.id, quantity: qty, price, mila, total })
-            .then(() => { saved++; })
-            .catch((err) => { console.error('Save failed for', customer.name, err); failed++; })
+          update
+            .mutateAsync({ id: existing.id, quantity: qty, price, mila, total })
+            .then(() => {
+              saved++;
+            })
+            .catch(err => {
+              console.error('Save failed for', customer.name, err);
+              failed++;
+            })
         );
-      } else if (qty > 0) {
+      } else {
         mutations.push(
-          add.mutateAsync({ customer_id: customer.id, date_key: dateKey, time_group: timeGroup, quantity: qty, price, mila, total })
-            .then(() => { saved++; })
-            .catch((err) => { console.error('Save failed for', customer.name, err); failed++; })
+          add
+            .mutateAsync({ customer_id: customer.id, date_key: dateKey, time_group: timeGroup, quantity: qty, price, mila, total })
+            .then(() => {
+              saved++;
+            })
+            .catch(err => {
+              console.error('Save failed for', customer.name, err);
+              failed++;
+            })
         );
       }
     }
 
-    // Wait for ALL mutations to complete
     await Promise.all(mutations);
 
-    // Now mark all as not dirty
     setDrafts(prev => {
       const next = { ...prev };
-      Object.keys(next).forEach(k => { next[k] = { ...next[k], dirty: false }; });
+      Object.keys(next).forEach(k => {
+        next[k] = { ...next[k], dirty: false, filled: true };
+      });
       return next;
     });
 
-    // Invalidate queries ONCE after all saves complete
     invalidateAll();
 
     savingRef.current = false;
@@ -194,7 +214,6 @@ export default function Operations() {
     }
   }, [canEdit, saving, filteredCustomers, drafts, txMap, dateKey, timeGroup, add, update, invalidateAll]);
 
-  // Voice command handler
   const handleVoiceApply = useCallback((entries: Array<{ customer_id: string; customer_name: string; quantity: number; price: number }>) => {
     setDrafts(prev => {
       const next = { ...prev };
@@ -205,6 +224,7 @@ export default function Operations() {
             quantity: String(e.quantity),
             price: String(e.price),
             dirty: true,
+            filled: false,
           };
         }
       });
@@ -224,11 +244,10 @@ export default function Operations() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  // Virtualizer for large lists
   const rowVirtualizer = useVirtualizer({
     count: filteredCustomers.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => activeQtyRow ? 100 : 52,
+    estimateSize: () => (activeQtyRow ? 100 : 52),
     overscan: 10,
   });
 
@@ -260,27 +279,16 @@ export default function Operations() {
           {isLoadingData && <Loader2 size={20} className="animate-spin text-primary" />}
         </div>
 
-        {/* Save All Button - only show when there are dirty entries */}
-        {canEdit && dirtyCount > 0 && (
-          <button
-            onClick={handleSaveAll}
-            disabled={saving}
-            className="action-button w-full flex items-center justify-center gap-2"
-          >
+        {shouldShowSaveAll && (
+          <button onClick={handleSaveAll} disabled={saving} className="action-button w-full flex items-center justify-center gap-2">
             {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-            Save All ({dirtyCount} changes)
+            Save All ({dirtyCount > 0 ? `${dirtyCount} changes` : `${unfilledCount} pending`})
           </button>
         )}
 
-        {/* Voice Command Result / Button */}
         <div className="flex items-start gap-3">
           <div className="flex-1">
-            <VoiceCommandButton
-              customers={customers}
-              timeGroup={timeGroup}
-              dateKey={dateKey}
-              onApply={handleVoiceApply}
-            />
+            <VoiceCommandButton customers={customers} timeGroup={timeGroup} dateKey={dateKey} onApply={handleVoiceApply} />
           </div>
         </div>
 
@@ -302,7 +310,6 @@ export default function Operations() {
                   <span className="text-sm font-body">Loading...</span>
                 </div>
               )}
-              {/* Virtualized table */}
               <div ref={parentRef} className="overflow-auto -mx-4 px-4" style={{ maxHeight: '60vh' }}>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-card z-10">
@@ -315,74 +322,82 @@ export default function Operations() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr><td colSpan={5} style={{ height: rowVirtualizer.getTotalSize(), padding: 0, position: 'relative' }}>
-                      {rowVirtualizer.getVirtualItems().map(virtualRow => {
-                        const customer = filteredCustomers[virtualRow.index];
-                        const draft = drafts[customer.id] || { quantity: '', price: '', mila: '', dirty: false };
-                        const isDirty = draft.dirty;
-                        const hasQty = Number(draft.quantity) > 0;
+                    <tr>
+                      <td colSpan={5} style={{ height: rowVirtualizer.getTotalSize(), padding: 0, position: 'relative' }}>
+                        {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                          const customer = filteredCustomers[virtualRow.index];
+                          const draft = drafts[customer.id] || { quantity: '', price: '', mila: '', dirty: false, filled: false };
+                          const isDirty = draft.dirty;
+                          const hasQty = Number(draft.quantity) > 0;
 
-                        return (
-                          <div
-                            key={customer.id}
-                            style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              width: '100%',
-                              transform: `translateY(${virtualRow.start}px)`,
-                            }}
-                          >
-                            <div className={`flex items-center border-b border-border/50 ${isDirty ? 'bg-primary/5' : ''}`}>
-                              <div className="data-table-cell text-left font-body text-xs flex-1 min-w-0 truncate">{customer.name}</div>
-                              <div className="data-table-cell text-center flex-shrink-0">
-                                <input type="number" inputMode="decimal"
-                                  value={draft.quantity}
-                                  placeholder="0"
-                                  onChange={e => handleFieldInput(customer.id, 'quantity', e.target.value)}
-                                  onFocus={() => setActiveQtyRow(customer.id)}
-                                  onBlur={() => setTimeout(() => setActiveQtyRow(null), 200)}
-                                  disabled={!canEdit}
-                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
+                          return (
+                            <div
+                              key={customer.id}
+                              style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualRow.start}px)` }}
+                            >
+                              <div className={`flex items-center border-b border-border/50 ${isDirty ? 'bg-primary/5' : ''}`}>
+                                <div className="data-table-cell text-left font-body text-xs flex-1 min-w-0 truncate">{customer.name}</div>
+                                <div className="data-table-cell text-center flex-shrink-0">
+                                  <input
+                                    type="number"
+                                    inputMode="decimal"
+                                    value={draft.quantity}
+                                    placeholder="0"
+                                    onChange={e => handleFieldInput(customer.id, 'quantity', e.target.value)}
+                                    onFocus={() => setActiveQtyRow(customer.id)}
+                                    onBlur={() => setTimeout(() => setActiveQtyRow(null), 200)}
+                                    disabled={!canEdit}
+                                    className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50"
+                                  />
+                                </div>
+                                <div className="data-table-cell text-center flex-shrink-0">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={draft.price}
+                                    onChange={e => handleFieldInput(customer.id, 'price', e.target.value)}
+                                    disabled={!canEdit}
+                                    className="w-14 text-center rounded border border-border py-1 font-number text-sm text-primary font-bold bg-card focus:outline-none focus:border-primary disabled:opacity-50"
+                                  />
+                                </div>
+                                <div className="data-table-cell text-center flex-shrink-0">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={draft.mila}
+                                    placeholder="0"
+                                    onChange={e => handleFieldInput(customer.id, 'mila', e.target.value)}
+                                    disabled={!canEdit}
+                                    className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50"
+                                  />
+                                </div>
+                                <div className="data-table-cell text-center flex-shrink-0">
+                                  {hasQty && (
+                                    <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
+                                      <MessageCircle size={16} />
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                              <div className="data-table-cell text-center flex-shrink-0">
-                                <input type="number" inputMode="numeric"
-                                  value={draft.price}
-                                  onChange={e => handleFieldInput(customer.id, 'price', e.target.value)}
-                                  disabled={!canEdit}
-                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm text-primary font-bold bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
-                              </div>
-                              <div className="data-table-cell text-center flex-shrink-0">
-                                <input type="number" inputMode="numeric"
-                                  value={draft.mila}
-                                  placeholder="0"
-                                  onChange={e => handleFieldInput(customer.id, 'mila', e.target.value)}
-                                  disabled={!canEdit}
-                                  className="w-14 text-center rounded border border-border py-1 font-number text-sm bg-card focus:outline-none focus:border-primary disabled:opacity-50" />
-                              </div>
-                              <div className="data-table-cell text-center flex-shrink-0">
-                                {hasQty && (
-                                  <button onClick={() => handleWhatsApp(customer.id)} className="p-1 text-primary">
-                                    <MessageCircle size={16} />
-                                  </button>
-                                )}
-                              </div>
+                              {activeQtyRow === customer.id && canEdit && (
+                                <div className="flex gap-1 px-2 py-1 bg-muted/50">
+                                  {[0.5, 1, 2].map(amt => (
+                                    <button
+                                      key={amt}
+                                      onClick={() => handleQuickAdd(customer.id, amt)}
+                                      className="flex-1 text-xs py-1 rounded bg-primary/10 text-primary font-heading font-semibold flex items-center justify-center gap-0.5"
+                                    >
+                                      <Plus size={10} />
+                                      {amt}L
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            {/* Quick quantity buttons */}
-                            {activeQtyRow === customer.id && canEdit && (
-                              <div className="flex gap-1 px-2 py-1 bg-muted/50">
-                                {[0.5, 1, 2].map(amt => (
-                                  <button key={amt} onClick={() => handleQuickAdd(customer.id, amt)}
-                                    className="flex-1 text-xs py-1 rounded bg-primary/10 text-primary font-heading font-semibold flex items-center justify-center gap-0.5">
-                                    <Plus size={10} />{amt}L
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </td></tr>
+                          );
+                        })}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
