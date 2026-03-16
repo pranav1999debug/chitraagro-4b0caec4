@@ -122,8 +122,8 @@ export default function CustomerSheet() {
   const handleQtyChange = (idx: number, value: string) => {
     setDrafts(prev => {
       const rows = [...(prev || buildRows())];
-      const rate = Number(rows[idx].rate) || 0;
-      const qty = Number(value) || 0;
+      const rate = parseFloat(rows[idx].rate) || 0;
+      const qty = parseFloat(value) || 0;
       rows[idx] = { ...rows[idx], quantity: value, price: qty * rate, dirty: true };
       return rows;
     });
@@ -132,8 +132,8 @@ export default function CustomerSheet() {
   const handleRateChange = (idx: number, value: string) => {
     setDrafts(prev => {
       const rows = [...(prev || buildRows())];
-      const qty = Number(rows[idx].quantity) || 0;
-      const rate = Number(value) || 0;
+      const qty = parseFloat(rows[idx].quantity) || 0;
+      const rate = parseFloat(value) || 0;
       rows[idx] = { ...rows[idx], rate: value, price: qty * rate, dirty: true };
       return rows;
     });
