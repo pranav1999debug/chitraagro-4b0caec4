@@ -8,6 +8,7 @@ import BottomNav from "@/components/BottomNav";
 import Dashboard from "./pages/Dashboard";
 import Operations from "./pages/Operations";
 import Customers from "./pages/Customers";
+import CustomerSheet from "./pages/CustomerSheet";
 import Expenses from "./pages/Expenses";
 import StaffPage from "./pages/Staff";
 import StaffAttendance from "./pages/StaffAttendance";
