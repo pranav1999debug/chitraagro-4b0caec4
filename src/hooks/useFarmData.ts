@@ -114,7 +114,7 @@ function useLocalFirstUpdate<T extends { id: string }>(table: string, invalidate
       const patchWithTs = { ...patch, updated_at: new Date().toISOString() };
 
       // 1. Update IndexedDB
-      await updateItem<T>(table, farmId, id, patchWithTs as Partial<T>);
+      await updateItem<T>(table, farmId, id, patchWithTs as unknown as Partial<T>);
 
       // 2. Enqueue
       await addToSyncQueue({ table, action: 'update', data: { id, ...patchWithTs } });
