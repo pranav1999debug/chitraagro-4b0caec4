@@ -1,76 +1,57 @@
-// Offline-first caching layer for Supabase queries
-// Caches data in localStorage, serves cached data when offline, syncs when online
+// Legacy compatibility layer — now backed by offlineDb (IndexedDB)
+// Re-exports for any remaining references in the codebase
 
-const CACHE_PREFIX = 'chitra_cache_';
-const CACHE_TIMESTAMP_PREFIX = 'chitra_cache_ts_';
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+import { getSyncQueue, addToSyncQueue, removeFromSyncQueue, clearSyncQueue, isOnline, type PendingMutation } from '@/lib/offlineDb';
 
-export function getCachedData<T>(key: string): T[] | null {
-  try {
-    const data = localStorage.getItem(CACHE_PREFIX + key);
-    if (!data) return null;
-    return JSON.parse(data) as T[];
-  } catch {
-    return null;
-  }
+// Deprecated — kept for backward compatibility
+export function getCachedData<T>(_key: string): T[] | null {
+  return null; // IndexedDB is async; callers should use offlineDb directly
 }
 
-export function setCachedData<T>(key: string, data: T[]): void {
-  try {
-    localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(data));
-    localStorage.setItem(CACHE_TIMESTAMP_PREFIX + key, Date.now().toString());
-  } catch {
-    // localStorage full - silently fail
-  }
+export function setCachedData<T>(_key: string, _data: T[]): void {
+  // No-op — data is now in IndexedDB
 }
 
-export function isCacheStale(key: string): boolean {
-  const ts = localStorage.getItem(CACHE_TIMESTAMP_PREFIX + key);
-  if (!ts) return true;
-  return Date.now() - parseInt(ts) > CACHE_TTL;
+export function isCacheStale(_key: string): boolean {
+  return true;
 }
 
-export function isOnline(): boolean {
-  return navigator.onLine;
-}
+export { isOnline };
 
-// Pending mutations queue for offline writes
-const PENDING_KEY = 'chitra_pending_mutations';
-
-interface PendingMutation {
-  id: string;
-  table: string;
-  action: 'insert' | 'update' | 'delete';
-  data: Record<string, any>;
-  timestamp: number;
-}
-
-export function addPendingMutation(mutation: Omit<PendingMutation, 'id' | 'timestamp'>): void {
-  try {
-    const pending = getPendingMutations();
-    pending.push({
-      ...mutation,
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-      timestamp: Date.now(),
-    });
-    localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
-  } catch { /* ignore */ }
-}
-
+// Sync versions for the pending mutation queue (used by OfflineIndicator polling)
 export function getPendingMutations(): PendingMutation[] {
+  // This is sync but queue is async now — we keep a sync mirror in localStorage for indicator
   try {
-    const data = localStorage.getItem(PENDING_KEY);
-    return data ? JSON.parse(data) : [];
+    const data = localStorage.getItem('chitra_sync_queue_count');
+    return data ? new Array(parseInt(data)).fill(null) : [];
   } catch {
     return [];
   }
 }
 
-export function clearPendingMutations(): void {
-  localStorage.removeItem(PENDING_KEY);
+export function addPendingMutation(mutation: Omit<PendingMutation, 'id' | 'timestamp'>): void {
+  addToSyncQueue(mutation).then(() => updateSyncCountMirror());
 }
 
 export function removePendingMutation(id: string): void {
-  const pending = getPendingMutations().filter(m => m.id !== id);
-  localStorage.setItem(PENDING_KEY, JSON.stringify(pending));
+  removeFromSyncQueue(id).then(() => updateSyncCountMirror());
 }
+
+export function clearPendingMutations(): void {
+  clearSyncQueue().then(() => {
+    localStorage.setItem('chitra_sync_queue_count', '0');
+  });
+}
+
+// Keep a sync mirror of queue length in localStorage for the indicator to poll
+async function updateSyncCountMirror() {
+  try {
+    const queue = await getSyncQueue();
+    localStorage.setItem('chitra_sync_queue_count', queue.length.toString());
+  } catch {
+    // ignore
+  }
+}
+
+// Export updater for use after sync operations
+export { updateSyncCountMirror };

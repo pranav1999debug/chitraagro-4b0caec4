@@ -1,46 +1,156 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import type { Database } from '@/integrations/supabase/types';
-import { getCachedData, setCachedData, isOnline, addPendingMutation } from '@/hooks/useOfflineCache';
-import { setLastSyncTimestamp } from '@/components/OfflineIndicator';
+import {
+  getCollection,
+  setCollection,
+  upsertItem,
+  removeItem,
+  updateItem,
+  addToSyncQueue,
+  isOnline,
+} from '@/lib/offlineDb';
+import { pullFromServer, pullFromServerFiltered, flushSyncQueue } from '@/lib/syncEngine';
 
-type TableName = keyof Database['public']['Tables'];
+// ============ Generic local-first query hook ============
 
-// Generic farm-scoped query hook with offline caching
-function useFarmQuery<T>(key: string, table: TableName, extraFilter?: (q: any) => any) {
+function useFarmQuery<T extends { id: string }>(
+  key: string,
+  table: string,
+  opts?: {
+    filters?: Record<string, any>;
+    enabled?: boolean;
+  }
+) {
   const { farmId } = useAuth();
-  const cacheKey = `${key}_${farmId}`;
 
   return useQuery<T[]>({
-    queryKey: [key, farmId],
+    queryKey: [key, farmId, opts?.filters],
     queryFn: async () => {
       if (!farmId) return [];
 
-      const cached = getCachedData<T>(cacheKey);
-      if (!isOnline()) {
-        return cached || [];
-      }
+      // 1. Read from IndexedDB first (instant)
+      const local = await getCollection<T>(table, farmId);
 
+      // 2. If offline, return local data
+      if (!isOnline()) return local;
+
+      // 3. If online, pull from server in background and update IndexedDB
       try {
-        let q = (supabase.from(table) as any).select('*').eq('farm_id', farmId).limit(10000);
-        if (extraFilter) q = extraFilter(q);
-        const { data, error } = await q;
-        if (error) throw error;
-        const result = (data || []) as T[];
-        setCachedData(cacheKey, result);
-        setLastSyncTimestamp();
-        return result;
-      } catch (error) {
-        if (cached) return cached;
-        throw error;
+        let serverData: T[];
+        if (opts?.filters && Object.keys(opts.filters).length > 0) {
+          serverData = await pullFromServerFiltered<T>(
+            table as any,
+            farmId,
+            opts.filters
+          );
+          // For filtered queries, merge into the full collection
+          const fullLocal = await getCollection<T>(table, farmId);
+          const serverIds = new Set(serverData.map((s) => s.id));
+          // Keep non-matching local items, replace matching with server data
+          const merged = fullLocal.filter((l) => !serverIds.has(l.id));
+          merged.push(...serverData);
+          await setCollection(table, farmId, merged);
+        } else {
+          serverData = await pullFromServer<T>(table as any, farmId);
+        }
+        return serverData;
+      } catch {
+        // Network error — return local data
+        return local;
       }
     },
-    enabled: !!farmId,
-    placeholderData: () => {
-      if (!farmId) return undefined;
-      const cached = getCachedData<T>(cacheKey);
-      return cached || undefined;
+    enabled: opts?.enabled !== undefined ? opts.enabled && !!farmId : !!farmId,
+    // Serve stale local data instantly while revalidating
+    staleTime: 0,
+  });
+}
+
+// ============ Generic mutation helpers ============
+
+function useLocalFirstAdd<T extends { id: string }>(table: string, invalidateKeys: string[]) {
+  const qc = useQueryClient();
+  const { farmId } = useAuth();
+
+  return useMutation({
+    mutationFn: async (data: Omit<T, 'id' | 'farm_id' | 'created_at' | 'updated_at'> & Record<string, any>) => {
+      if (!farmId) throw new Error('No farm selected');
+      const now = new Date().toISOString();
+      const item = {
+        ...data,
+        id: crypto.randomUUID(),
+        farm_id: farmId,
+        created_at: now,
+        updated_at: now,
+      } as unknown as T;
+
+      // 1. Write to IndexedDB immediately
+      await upsertItem<T>(table, farmId, item);
+
+      // 2. Enqueue sync mutation
+      const { id: _id, ...payload } = item as any;
+      await addToSyncQueue({ table, action: 'insert', data: { ...item } as any });
+
+      // 3. If online, flush immediately
+      if (isOnline()) {
+        flushSyncQueue().catch(console.error);
+      }
+
+      return item;
+    },
+    onSuccess: () => {
+      invalidateKeys.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
+  });
+}
+
+function useLocalFirstUpdate<T extends { id: string }>(table: string, invalidateKeys: string[]) {
+  const qc = useQueryClient();
+  const { farmId } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ id, ...patch }: { id: string } & Partial<T>) => {
+      if (!farmId) throw new Error('No farm selected');
+      const patchWithTs = { ...patch, updated_at: new Date().toISOString() };
+
+      // 1. Update IndexedDB
+      await updateItem<T>(table, farmId, id, patchWithTs as unknown as Partial<T>);
+
+      // 2. Enqueue
+      await addToSyncQueue({ table, action: 'update', data: { id, ...patchWithTs } });
+
+      // 3. Flush if online
+      if (isOnline()) {
+        flushSyncQueue().catch(console.error);
+      }
+    },
+    onSuccess: () => {
+      invalidateKeys.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
+  });
+}
+
+function useLocalFirstDelete<T extends { id: string }>(table: string, invalidateKeys: string[]) {
+  const qc = useQueryClient();
+  const { farmId } = useAuth();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!farmId) throw new Error('No farm selected');
+
+      // 1. Remove from IndexedDB
+      await removeItem<T>(table, farmId, id);
+
+      // 2. Enqueue
+      await addToSyncQueue({ table, action: 'delete', data: { id } });
+
+      // 3. Flush if online
+      if (isOnline()) {
+        flushSyncQueue().catch(console.error);
+      }
+    },
+    onSuccess: () => {
+      invalidateKeys.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
   });
 }
@@ -68,48 +178,9 @@ export function useCustomers() {
 }
 
 export function useCustomerMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (c: Omit<DbCustomer, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const payload = { ...c, farm_id: farmId! };
-      const optimistic: DbCustomer = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...c };
-      const cacheKey = `customers_${farmId}`;
-      const cached = getCachedData<DbCustomer>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'insert', data: payload }); return; }
-      const { error } = await supabase.from('customers').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
-  });
-
-  const update = useMutation({
-    mutationFn: async ({ id, ...c }: { id: string } & Partial<DbCustomer>) => {
-      const cacheKey = `customers_${farmId}`;
-      const cached = getCachedData<DbCustomer>(cacheKey) || [];
-      const idx = cached.findIndex(x => x.id === id);
-      if (idx >= 0) { cached[idx] = { ...cached[idx], ...c }; setCachedData(cacheKey, cached); }
-      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'update', data: { id, ...c } }); return; }
-      const { error } = await supabase.from('customers').update(c).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const cacheKey = `customers_${farmId}`;
-      const cached = getCachedData<DbCustomer>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(x => x.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'customers', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('customers').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['customers'] }),
-  });
-
+  const add = useLocalFirstAdd<DbCustomer>('customers', ['customers']);
+  const update = useLocalFirstUpdate<DbCustomer>('customers', ['customers']);
+  const remove = useLocalFirstDelete<DbCustomer>('customers', ['customers']);
   return { add, update, remove };
 }
 
@@ -128,38 +199,11 @@ export interface DbTransaction {
   updated_at: string;
 }
 
+const TX_KEYS = ['transactions', 'all-transactions', 'customer-transactions'];
+
 export function useTransactions(dateKey?: string) {
-  const { farmId } = useAuth();
-  const cacheKey = `transactions_${farmId}_${dateKey}`;
-
-  return useQuery<DbTransaction[]>({
-    queryKey: ['transactions', farmId, dateKey],
-    queryFn: async () => {
-      if (!farmId) return [];
-
-      const cached = getCachedData<DbTransaction>(cacheKey);
-      if (!isOnline()) {
-        return cached || [];
-      }
-
-      try {
-        let q = supabase.from('transactions').select('*').eq('farm_id', farmId).limit(10000);
-        if (dateKey) q = q.eq('date_key', dateKey);
-        const { data, error } = await q;
-        if (error) throw error;
-        const result = (data || []) as DbTransaction[];
-        setCachedData(cacheKey, result);
-        return result;
-      } catch (error) {
-        if (cached) return cached;
-        throw error;
-      }
-    },
-    enabled: !!farmId,
-    placeholderData: () => {
-      if (!farmId) return undefined;
-      return getCachedData<DbTransaction>(cacheKey) || undefined;
-    },
+  return useFarmQuery<DbTransaction>('transactions', 'transactions', {
+    filters: dateKey ? { date_key: dateKey } : undefined,
   });
 }
 
@@ -167,19 +211,23 @@ export function useAllTransactions() {
   return useFarmQuery<DbTransaction>('all-transactions', 'transactions');
 }
 
-// Fetch transactions for a specific customer in a specific month (no row limit issues)
 export function useCustomerMonthTransactions(customerId: string | undefined, yearMonth: string) {
   const { farmId } = useAuth();
-  const cacheKey = `customer-tx_${farmId}_${customerId}_${yearMonth}`;
 
   return useQuery<DbTransaction[]>({
     queryKey: ['customer-transactions', farmId, customerId, yearMonth],
     queryFn: async () => {
       if (!farmId || !customerId) return [];
 
-      const cached = getCachedData<DbTransaction>(cacheKey);
-      if (!isOnline()) return cached || [];
+      // Read all transactions from IndexedDB and filter locally
+      const allTx = await getCollection<DbTransaction>('transactions', farmId);
+      const localFiltered = allTx.filter(
+        (tx) => tx.customer_id === customerId && tx.date_key.startsWith(yearMonth)
+      );
 
+      if (!isOnline()) return localFiltered;
+
+      // Pull filtered from server
       try {
         const { data, error } = await supabase
           .from('transactions')
@@ -188,20 +236,24 @@ export function useCustomerMonthTransactions(customerId: string | undefined, yea
           .eq('customer_id', customerId)
           .like('date_key', `${yearMonth}%`);
         if (error) throw error;
-        const result = (data || []) as DbTransaction[];
-        setCachedData(cacheKey, result);
-        setLastSyncTimestamp();
-        return result;
-      } catch (error) {
-        if (cached) return cached;
-        throw error;
+        const serverData = (data || []) as DbTransaction[];
+
+        // Merge into full local collection
+        const fullLocal = await getCollection<DbTransaction>('transactions', farmId);
+        const serverIds = new Set(serverData.map((s) => s.id));
+        // Remove old matching entries, add server ones
+        const nonMatching = fullLocal.filter(
+          (l) => !(l.customer_id === customerId && l.date_key.startsWith(yearMonth))
+        );
+        nonMatching.push(...serverData);
+        await setCollection('transactions', farmId, nonMatching);
+
+        return serverData;
+      } catch {
+        return localFiltered;
       }
     },
     enabled: !!farmId && !!customerId,
-    placeholderData: () => {
-      if (!farmId || !customerId) return undefined;
-      return getCachedData<DbTransaction>(cacheKey) || undefined;
-    },
   });
 }
 
@@ -211,58 +263,48 @@ export function useTransactionMutations() {
 
   const add = useMutation({
     mutationFn: async (t: Omit<DbTransaction, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const payload = { ...t, farm_id: farmId! };
-      if (!isOnline()) {
-        const tempId = 'offline_' + Date.now().toString(36);
-        const optimistic: DbTransaction = {
-          id: tempId, farm_id: farmId!, created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(), ...t,
-        };
-        addPendingMutation({ table: 'transactions', action: 'insert', data: payload });
-        const cacheKey = `transactions_${farmId}_${t.date_key}`;
-        const cached = getCachedData<DbTransaction>(cacheKey) || [];
-        setCachedData(cacheKey, [...cached, optimistic]);
-        return optimistic;
-      }
-      const { data, error } = await supabase.from('transactions').insert(payload).select().single();
-      if (error) throw error;
-      const cacheKey = `transactions_${farmId}_${t.date_key}`;
-      const cached = getCachedData<DbTransaction>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, data as DbTransaction]);
-      return data;
+      if (!farmId) throw new Error('No farm selected');
+      const now = new Date().toISOString();
+      const item: DbTransaction = {
+        ...t,
+        id: crypto.randomUUID(),
+        farm_id: farmId,
+        created_at: now,
+        updated_at: now,
+      };
+
+      await upsertItem<DbTransaction>('transactions', farmId, item);
+      await addToSyncQueue({ table: 'transactions', action: 'insert', data: { ...item } });
+
+      if (isOnline()) flushSyncQueue().catch(console.error);
+      return item;
     },
-    // Don't auto-invalidate - we'll do it manually after batch saves
   });
 
   const update = useMutation({
     mutationFn: async ({ id, ...t }: { id: string } & Partial<DbTransaction>) => {
-      if (!isOnline()) {
-        addPendingMutation({ table: 'transactions', action: 'update', data: { id, ...t } });
-        return;
-      }
-      const { error } = await supabase.from('transactions').update(t).eq('id', id);
-      if (error) throw error;
+      if (!farmId) throw new Error('No farm selected');
+      const patch = { ...t, updated_at: new Date().toISOString() };
+      await updateItem<DbTransaction>('transactions', farmId, id, patch);
+      await addToSyncQueue({ table: 'transactions', action: 'update', data: { id, ...patch } });
+      if (isOnline()) flushSyncQueue().catch(console.error);
     },
-    // Don't auto-invalidate - we'll do it manually after batch saves
   });
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      if (!isOnline()) { addPendingMutation({ table: 'transactions', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('transactions').delete().eq('id', id);
-      if (error) throw error;
+      if (!farmId) throw new Error('No farm selected');
+      await removeItem<DbTransaction>('transactions', farmId, id);
+      await addToSyncQueue({ table: 'transactions', action: 'delete', data: { id } });
+      if (isOnline()) flushSyncQueue().catch(console.error);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['all-transactions'] });
+      TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
   });
 
-  // Manual invalidation function for batch operations
   const invalidateAll = () => {
-    qc.invalidateQueries({ queryKey: ['transactions'] });
-    qc.invalidateQueries({ queryKey: ['all-transactions'] });
-    qc.invalidateQueries({ queryKey: ['customer-transactions'] });
+    TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
   };
 
   return { add, update, remove, invalidateAll };
@@ -284,35 +326,8 @@ export function usePayments() {
 }
 
 export function usePaymentMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (p: Omit<DbPayment, 'id' | 'farm_id' | 'created_at'>) => {
-      const payload = { ...p, farm_id: farmId! };
-      const optimistic: DbPayment = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...p };
-      const cacheKey = `payments_${farmId}`;
-      const cached = getCachedData<DbPayment>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'insert', data: payload }); return; }
-      const { error } = await supabase.from('payments').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payments'] }),
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const cacheKey = `payments_${farmId}`;
-      const cached = getCachedData<DbPayment>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(x => x.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'payments', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('payments').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payments'] }),
-  });
-
+  const add = useLocalFirstAdd<DbPayment>('payments', ['payments']);
+  const remove = useLocalFirstDelete<DbPayment>('payments', ['payments']);
   return { add, remove };
 }
 
@@ -336,51 +351,9 @@ export function useStaff() {
 }
 
 export function useStaffMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (s: Omit<DbStaff, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const payload = { ...s, farm_id: farmId! };
-      const optimistic: DbStaff = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...s };
-      // Optimistic cache
-      const cacheKey = `staff_${farmId}`;
-      const cached = getCachedData<DbStaff>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'insert', data: payload }); return; }
-      const { error } = await supabase.from('staff').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-  });
-
-  const update = useMutation({
-    mutationFn: async ({ id, ...s }: { id: string } & Partial<DbStaff>) => {
-      // Optimistic cache
-      const cacheKey = `staff_${farmId}`;
-      const cached = getCachedData<DbStaff>(cacheKey) || [];
-      const idx = cached.findIndex(c => c.id === id);
-      if (idx >= 0) { cached[idx] = { ...cached[idx], ...s }; setCachedData(cacheKey, cached); }
-      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'update', data: { id, ...s } }); return; }
-      const { error } = await supabase.from('staff').update(s).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      // Optimistic cache
-      const cacheKey = `staff_${farmId}`;
-      const cached = getCachedData<DbStaff>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(c => c.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'staff', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('staff').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['staff'] }),
-  });
-
+  const add = useLocalFirstAdd<DbStaff>('staff', ['staff']);
+  const update = useLocalFirstUpdate<DbStaff>('staff', ['staff']);
+  const remove = useLocalFirstDelete<DbStaff>('staff', ['staff']);
   return { add, update, remove };
 }
 
@@ -397,17 +370,19 @@ export interface DbAttendance {
 
 export function useAttendance(staffId: string, yearMonth: string) {
   const { farmId } = useAuth();
-  const cacheKey = `attendance_${farmId}_${staffId}_${yearMonth}`;
 
   return useQuery<DbAttendance[]>({
     queryKey: ['attendance', farmId, staffId, yearMonth],
     queryFn: async () => {
       if (!farmId) return [];
 
-      const cached = getCachedData<DbAttendance>(cacheKey);
-      if (!isOnline()) {
-        return cached || [];
-      }
+      // Read from IndexedDB and filter
+      const all = await getCollection<DbAttendance>('attendance', farmId);
+      const localFiltered = all.filter(
+        (a) => a.staff_id === staffId && a.date_key.startsWith(yearMonth)
+      );
+
+      if (!isOnline()) return localFiltered;
 
       try {
         const { data, error } = await supabase
@@ -417,19 +392,22 @@ export function useAttendance(staffId: string, yearMonth: string) {
           .eq('staff_id', staffId)
           .like('date_key', `${yearMonth}%`);
         if (error) throw error;
-        const result = (data || []) as DbAttendance[];
-        setCachedData(cacheKey, result);
-        return result;
-      } catch (error) {
-        if (cached) return cached;
-        throw error;
+        const serverData = (data || []) as DbAttendance[];
+
+        // Merge into full local
+        const fullLocal = await getCollection<DbAttendance>('attendance', farmId);
+        const nonMatching = fullLocal.filter(
+          (l) => !(l.staff_id === staffId && l.date_key.startsWith(yearMonth))
+        );
+        nonMatching.push(...serverData);
+        await setCollection('attendance', farmId, nonMatching);
+
+        return serverData;
+      } catch {
+        return localFiltered;
       }
     },
     enabled: !!farmId && !!staffId,
-    placeholderData: () => {
-      if (!farmId) return undefined;
-      return getCachedData<DbAttendance>(cacheKey) || undefined;
-    },
   });
 }
 
@@ -443,41 +421,35 @@ export function useAttendanceMutations() {
 
   const upsert = useMutation({
     mutationFn: async (a: { staff_id: string; date_key: string; present: boolean; advance_amount: number }) => {
-      const payload = { ...a, farm_id: farmId! };
-      
-      // Optimistic local cache update
-      const cacheKey = `attendance_${farmId}_${a.staff_id}_${a.date_key.substring(0, 7)}`;
-      const cached = getCachedData<DbAttendance>(cacheKey) || [];
-      const existingIdx = cached.findIndex(c => c.staff_id === a.staff_id && c.date_key === a.date_key);
-      if (existingIdx >= 0) {
-        cached[existingIdx] = { ...cached[existingIdx], ...a };
-      } else {
-        cached.push({ id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...a });
-      }
-      setCachedData(cacheKey, cached);
+      if (!farmId) throw new Error('No farm selected');
 
-      if (!isOnline()) {
-        addPendingMutation({ table: 'attendance', action: 'insert', data: payload });
-        return;
-      }
-
-      const { data: existing } = await supabase
-        .from('attendance')
-        .select('id')
-        .eq('staff_id', a.staff_id)
-        .eq('date_key', a.date_key)
-        .single();
+      // Check if exists locally
+      const all = await getCollection<DbAttendance>('attendance', farmId);
+      const existing = all.find((x) => x.staff_id === a.staff_id && x.date_key === a.date_key);
 
       if (existing) {
-        const { error } = await supabase.from('attendance')
-          .update({ present: a.present, advance_amount: a.advance_amount })
-          .eq('id', existing.id);
-        if (error) throw error;
+        // Update locally
+        await updateItem<DbAttendance>('attendance', farmId, existing.id, {
+          present: a.present,
+          advance_amount: a.advance_amount,
+        });
+        await addToSyncQueue({
+          table: 'attendance',
+          action: 'update',
+          data: { id: existing.id, present: a.present, advance_amount: a.advance_amount },
+        });
       } else {
-        const { error } = await supabase.from('attendance')
-          .insert(payload);
-        if (error) throw error;
+        const item: DbAttendance = {
+          ...a,
+          id: crypto.randomUUID(),
+          farm_id: farmId,
+          created_at: new Date().toISOString(),
+        };
+        await upsertItem<DbAttendance>('attendance', farmId, item);
+        await addToSyncQueue({ table: 'attendance', action: 'insert', data: { ...item } });
       }
+
+      if (isOnline()) flushSyncQueue().catch(console.error);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['attendance'] });
@@ -501,10 +473,12 @@ export interface DbExpense {
   updated_at: string;
 }
 
+const EXPENSE_KEYS = ['expenses', 'all-expenses'];
+
 export function useExpenses(yearMonth?: string) {
-  return useFarmQuery<DbExpense>('expenses', 'expenses',
-    yearMonth ? (q: any) => q.like('date_key', `${yearMonth}%`) : undefined
-  );
+  return useFarmQuery<DbExpense>('expenses', 'expenses', {
+    filters: yearMonth ? { date_key_like: `${yearMonth}%` } : undefined,
+  });
 }
 
 export function useAllExpenses() {
@@ -512,57 +486,9 @@ export function useAllExpenses() {
 }
 
 export function useExpenseMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (e: Omit<DbExpense, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const payload = { ...e, farm_id: farmId! };
-      const optimistic: DbExpense = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...e };
-      const cacheKey = `expenses_${farmId}`;
-      const cached = getCachedData<DbExpense>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'insert', data: payload }); return; }
-      const { error } = await supabase.from('expenses').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      qc.invalidateQueries({ queryKey: ['all-expenses'] });
-    },
-  });
-
-  const update = useMutation({
-    mutationFn: async ({ id, ...e }: { id: string } & Partial<DbExpense>) => {
-      const cacheKey = `expenses_${farmId}`;
-      const cached = getCachedData<DbExpense>(cacheKey) || [];
-      const idx = cached.findIndex(x => x.id === id);
-      if (idx >= 0) { cached[idx] = { ...cached[idx], ...e }; setCachedData(cacheKey, cached); }
-      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'update', data: { id, ...e } }); return; }
-      const { error } = await supabase.from('expenses').update(e).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      qc.invalidateQueries({ queryKey: ['all-expenses'] });
-    },
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const cacheKey = `expenses_${farmId}`;
-      const cached = getCachedData<DbExpense>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(x => x.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'expenses', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('expenses').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['expenses'] });
-      qc.invalidateQueries({ queryKey: ['all-expenses'] });
-    },
-  });
-
+  const add = useLocalFirstAdd<DbExpense>('expenses', EXPENSE_KEYS);
+  const update = useLocalFirstUpdate<DbExpense>('expenses', EXPENSE_KEYS);
+  const remove = useLocalFirstDelete<DbExpense>('expenses', EXPENSE_KEYS);
   return { add, update, remove };
 }
 
@@ -580,52 +506,13 @@ export interface DbSupplier {
 }
 
 export function useSuppliers() {
-  return useFarmQuery<DbSupplier>('suppliers', 'suppliers' as any);
+  return useFarmQuery<DbSupplier>('suppliers', 'suppliers');
 }
 
 export function useSupplierMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (s: Omit<DbSupplier, 'id' | 'farm_id' | 'created_at' | 'updated_at'>) => {
-      const payload = { ...s, farm_id: farmId! };
-      const optimistic: DbSupplier = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), ...s };
-      const cacheKey = `suppliers_${farmId}`;
-      const cached = getCachedData<DbSupplier>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'insert', data: payload }); return; }
-      const { error } = await (supabase.from('suppliers' as any) as any).insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
-  });
-
-  const update = useMutation({
-    mutationFn: async ({ id, ...s }: { id: string } & Partial<DbSupplier>) => {
-      const cacheKey = `suppliers_${farmId}`;
-      const cached = getCachedData<DbSupplier>(cacheKey) || [];
-      const idx = cached.findIndex(x => x.id === id);
-      if (idx >= 0) { cached[idx] = { ...cached[idx], ...s }; setCachedData(cacheKey, cached); }
-      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'update', data: { id, ...s } }); return; }
-      const { error } = await (supabase.from('suppliers' as any) as any).update(s).eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const cacheKey = `suppliers_${farmId}`;
-      const cached = getCachedData<DbSupplier>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(x => x.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'suppliers' as any, action: 'delete', data: { id } }); return; }
-      const { error } = await (supabase.from('suppliers' as any) as any).delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['suppliers'] }),
-  });
-
+  const add = useLocalFirstAdd<DbSupplier>('suppliers', ['suppliers']);
+  const update = useLocalFirstUpdate<DbSupplier>('suppliers', ['suppliers']);
+  const remove = useLocalFirstDelete<DbSupplier>('suppliers', ['suppliers']);
   return { add, update, remove };
 }
 
@@ -642,10 +529,12 @@ export interface DbProcurement {
   created_at: string;
 }
 
+const PROC_KEYS = ['procurement', 'all-procurement'];
+
 export function useProcurement(yearMonth?: string) {
-  return useFarmQuery<DbProcurement>('procurement', 'procurement',
-    yearMonth ? (q: any) => q.like('date_key', `${yearMonth}%`) : undefined
-  );
+  return useFarmQuery<DbProcurement>('procurement', 'procurement', {
+    filters: yearMonth ? { date_key_like: `${yearMonth}%` } : undefined,
+  });
 }
 
 export function useAllProcurement() {
@@ -653,40 +542,7 @@ export function useAllProcurement() {
 }
 
 export function useProcurementMutations() {
-  const qc = useQueryClient();
-  const { farmId } = useAuth();
-
-  const add = useMutation({
-    mutationFn: async (p: Omit<DbProcurement, 'id' | 'farm_id' | 'created_at'>) => {
-      const payload = { ...p, farm_id: farmId! };
-      const optimistic: DbProcurement = { id: 'local_' + Date.now().toString(36), farm_id: farmId!, created_at: new Date().toISOString(), ...p };
-      const cacheKey = `procurement_${farmId}`;
-      const cached = getCachedData<DbProcurement>(cacheKey) || [];
-      setCachedData(cacheKey, [...cached, optimistic]);
-      if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'insert', data: payload }); return; }
-      const { error } = await supabase.from('procurement').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['procurement'] });
-      qc.invalidateQueries({ queryKey: ['all-procurement'] });
-    },
-  });
-
-  const remove = useMutation({
-    mutationFn: async (id: string) => {
-      const cacheKey = `procurement_${farmId}`;
-      const cached = getCachedData<DbProcurement>(cacheKey) || [];
-      setCachedData(cacheKey, cached.filter(x => x.id !== id));
-      if (!isOnline()) { addPendingMutation({ table: 'procurement', action: 'delete', data: { id } }); return; }
-      const { error } = await supabase.from('procurement').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['procurement'] });
-      qc.invalidateQueries({ queryKey: ['all-procurement'] });
-    },
-  });
-
+  const add = useLocalFirstAdd<DbProcurement>('procurement', PROC_KEYS);
+  const remove = useLocalFirstDelete<DbProcurement>('procurement', PROC_KEYS);
   return { add, remove };
 }
