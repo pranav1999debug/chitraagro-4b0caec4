@@ -1,17 +1,6 @@
 import { useState, useEffect } from 'react';
 import { WifiOff, Wifi, Upload, Clock } from 'lucide-react';
-import { getPendingMutations } from '@/hooks/useOfflineCache';
-
-const LAST_SYNC_KEY = 'chitra_last_sync_ts';
-
-export function setLastSyncTimestamp() {
-  localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-}
-
-function getLastSyncTimestamp(): number | null {
-  const ts = localStorage.getItem(LAST_SYNC_KEY);
-  return ts ? parseInt(ts) : null;
-}
+import { getSyncQueue, getGlobalLastSync } from '@/lib/offlineDb';
 
 function formatTimeAgo(ts: number): string {
   const diff = Math.floor((Date.now() - ts) / 1000);
@@ -21,11 +10,16 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// Keep this export for backward compat
+export function setLastSyncTimestamp() {
+  localStorage.setItem('chitra_last_sync_ts', Date.now().toString());
+}
+
 export default function OfflineIndicator() {
   const [online, setOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
   const [showSynced, setShowSynced] = useState(false);
-  const [lastSync, setLastSync] = useState<number | null>(getLastSyncTimestamp());
+  const [lastSync, setLastSync] = useState<number | null>(null);
 
   useEffect(() => {
     const goOnline = () => {
@@ -44,12 +38,19 @@ export default function OfflineIndicator() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPendingCount(getPendingMutations().length);
-      setLastSync(getLastSyncTimestamp());
-    }, 2000);
-    setPendingCount(getPendingMutations().length);
-    setLastSync(getLastSyncTimestamp());
+    const poll = async () => {
+      try {
+        const queue = await getSyncQueue();
+        setPendingCount(queue.length);
+        const ts = await getGlobalLastSync();
+        setLastSync(ts);
+      } catch {
+        // ignore
+      }
+    };
+
+    poll();
+    const interval = setInterval(poll, 2000);
     return () => clearInterval(interval);
   }, []);
 
