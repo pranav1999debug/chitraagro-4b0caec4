@@ -71,10 +71,10 @@ function useFarmQuery<T extends { id: string }>(
         } else {
           serverData = await pullFromServer<T>(table as any, farmId);
         }
-        return serverData;
+        return applyFilters(serverData.length > 0 ? serverData : await getCollection<T>(table, farmId));
       } catch {
-        // Network error — return local data
-        return local;
+        // Network error — return filtered local data
+        return applyFilters(local);
       }
     },
     enabled: opts?.enabled !== undefined ? opts.enabled && !!farmId : !!farmId,

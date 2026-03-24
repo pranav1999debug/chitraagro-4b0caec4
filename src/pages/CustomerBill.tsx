@@ -141,6 +141,9 @@ export default function CustomerBill() {
           <div className="space-y-1 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.totalMilk', lang)}</span><span className="font-number font-semibold">{totalLiters} Ltrs</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.totalAmount', lang)}</span><span className="font-number font-semibold">₹{totalAmount}</span></div>
+            {totalMila > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Mila (Daily Received)</span><span className="font-number font-semibold text-primary">₹{totalMila}</span></div>
+            )}
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.paymentsReceived', lang)}</span><span className="font-number font-semibold text-primary">₹{totalPayments}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.previousBalance', lang)}</span><span className="font-number font-semibold">₹{previousBalance}</span></div>
             <div className="border-t border-border pt-2 flex justify-between">
