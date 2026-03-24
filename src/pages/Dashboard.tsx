@@ -8,6 +8,7 @@ import { getTodayNepali, getDaysInMonth, nepaliDateToKey, type NepaliDate } from
 import { useCustomers, useAllTransactions, useStaff, useAllExpenses, useAllProcurement, usePayments } from '@/hooks/useFarmData';
 import { Users, UserCog, IndianRupee, Receipt, Milk, Wallet } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const { lang } = useApp();
