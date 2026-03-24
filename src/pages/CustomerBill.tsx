@@ -50,9 +50,12 @@ export default function CustomerBill() {
 
   const totalLiters = dailyRecords.reduce((s, r) => s + r.liters, 0);
   const totalAmount = dailyRecords.reduce((s, r) => s + r.amount, 0);
+  const totalMila = useMemo(() => {
+    return customerTransactions.reduce((s, tx) => s + Number(tx.mila || 0), 0);
+  }, [customerTransactions]);
   const totalPayments = monthPayments.reduce((s, p) => s + Number(p.amount), 0);
   const previousBalance = Number(customer.opening_balance);
-  const finalBalance = previousBalance + totalAmount - totalPayments;
+  const finalBalance = previousBalance + totalAmount - totalPayments - totalMila;
 
   const monthName = getNepaliMonthName(month, lang === 'hi' ? 'np' : 'en');
   const displayFarmName = farmName || 'CHITRA AGRO';
