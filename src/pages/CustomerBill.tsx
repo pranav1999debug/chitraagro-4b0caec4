@@ -46,13 +46,14 @@ export default function CustomerBill() {
     return allPayments.filter(p => p.customer_id === customerId && p.date_key.startsWith(yearMonth));
   }, [allPayments, customerId, yearMonth, customer]);
 
+  const totalMila = useMemo(() => {
+    return customerTransactions.reduce((s, tx) => s + Number(tx.mila || 0), 0);
+  }, [customerTransactions]);
+
   if (!customer) return <div className="p-4 text-center text-muted-foreground">Customer not found</div>;
 
   const totalLiters = dailyRecords.reduce((s, r) => s + r.liters, 0);
   const totalAmount = dailyRecords.reduce((s, r) => s + r.amount, 0);
-  const totalMila = useMemo(() => {
-    return customerTransactions.reduce((s, tx) => s + Number(tx.mila || 0), 0);
-  }, [customerTransactions]);
   const totalPayments = monthPayments.reduce((s, p) => s + Number(p.amount), 0);
   const previousBalance = Number(customer.opening_balance);
   const finalBalance = previousBalance + totalAmount - totalPayments - totalMila;
