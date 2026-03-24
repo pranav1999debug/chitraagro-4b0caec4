@@ -50,12 +50,12 @@ export default function Dashboard() {
   }, [date.year, date.month, daysInMonth, monthTransactions]);
 
   const stats = [
-    { label: t('dashboard.totalCustomers', lang), value: customers.length, icon: Users },
-    { label: t('dashboard.totalStaff', lang), value: staff.length, icon: UserCog },
-    { label: t('dashboard.hisab', lang), value: `₹${hisab}`, icon: IndianRupee, negative: hisab > 0 },
-    { label: t('dashboard.totalExpenses', lang), value: `₹${totalExpenses}`, icon: Receipt },
-    { label: t('dashboard.milkProcurement', lang), value: `₹${totalProcurement}`, icon: Milk },
-    { label: t('dashboard.staffAdvance', lang), value: `₹${staffAdvance}`, icon: Wallet },
+    { label: t('dashboard.totalCustomers', lang), value: customers.length, icon: Users, path: '/customers' },
+    { label: t('dashboard.totalStaff', lang), value: staff.length, icon: UserCog, path: '/staff' },
+    { label: t('dashboard.hisab', lang), value: `₹${hisab}`, icon: IndianRupee, negative: hisab > 0, path: '/operations' },
+    { label: t('dashboard.totalExpenses', lang), value: `₹${totalExpenses}`, icon: Receipt, path: '/expenses' },
+    { label: t('dashboard.milkProcurement', lang), value: `₹${totalProcurement}`, icon: Milk, path: '/procurement' },
+    { label: t('dashboard.staffAdvance', lang), value: `₹${staffAdvance}`, icon: Wallet, path: '/staff' },
   ];
 
   return (
