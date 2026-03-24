@@ -62,7 +62,10 @@ export default function CustomerBill() {
   const displayFarmName = farmName || 'CHITRA AGRO';
 
   const getBillText = () => {
-    return `Hello ${customer.name},\n\nMonthly Milk Bill Summary\n\nMonth: ${monthName} ${year}\n\nTotal Milk: ${totalLiters} Ltrs\nRate: Rs ${customer.purchase_rate}\nTotal Amount: Rs ${totalAmount}\nPayments Received: Rs ${totalPayments}\nPrevious Balance: Rs ${previousBalance}\nRemaining Balance: Rs ${finalBalance}\n\nThank you\n${displayFarmName}`;
+    let text = `Hello ${customer.name},\n\nMonthly Milk Bill Summary\n\nMonth: ${monthName} ${year}\n\nTotal Milk: ${totalLiters} Ltrs\nRate: Rs ${customer.purchase_rate}\nTotal Amount: Rs ${totalAmount}\n`;
+    if (totalMila > 0) text += `Mila (Daily Received): Rs ${totalMila}\n`;
+    text += `Payments Received: Rs ${totalPayments}\nPrevious Balance: Rs ${previousBalance}\nRemaining Balance: Rs ${finalBalance}\n\nThank you\n${displayFarmName}`;
+    return text;
   };
 
   const handleWhatsApp = () => {
