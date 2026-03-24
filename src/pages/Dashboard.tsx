@@ -8,8 +8,10 @@ import { getTodayNepali, getDaysInMonth, nepaliDateToKey, type NepaliDate } from
 import { useCustomers, useAllTransactions, useStaff, useAllExpenses, useAllProcurement, usePayments } from '@/hooks/useFarmData';
 import { Users, UserCog, IndianRupee, Receipt, Milk, Wallet } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { lang } = useApp();
   const { farmName } = useAuth();
   const today = getTodayNepali();
@@ -43,18 +45,18 @@ export default function Dashboard() {
       const day = i + 1;
       const key = nepaliDateToKey({ year: date.year, month: date.month, day });
       const dayTx = monthTransactions.filter(tx => tx.date_key === key);
-      const sales = dayTx.reduce((s, tx) => s + Number(tx.total), 0);
-      return { day: String(day).padStart(2, '0'), sales };
+      const liters = dayTx.reduce((s, tx) => s + Number(tx.quantity), 0);
+      return { day: String(day).padStart(2, '0'), liters };
     });
   }, [date.year, date.month, daysInMonth, monthTransactions]);
 
   const stats = [
-    { label: t('dashboard.totalCustomers', lang), value: customers.length, icon: Users },
-    { label: t('dashboard.totalStaff', lang), value: staff.length, icon: UserCog },
-    { label: t('dashboard.hisab', lang), value: `₹${hisab}`, icon: IndianRupee, negative: hisab > 0 },
-    { label: t('dashboard.totalExpenses', lang), value: `₹${totalExpenses}`, icon: Receipt },
-    { label: t('dashboard.milkProcurement', lang), value: `₹${totalProcurement}`, icon: Milk },
-    { label: t('dashboard.staffAdvance', lang), value: `₹${staffAdvance}`, icon: Wallet },
+    { label: t('dashboard.totalCustomers', lang), value: customers.length, icon: Users, path: '/customers' },
+    { label: t('dashboard.totalStaff', lang), value: staff.length, icon: UserCog, path: '/staff' },
+    { label: t('dashboard.hisab', lang), value: `₹${hisab}`, icon: IndianRupee, negative: hisab > 0, path: '/operations' },
+    { label: t('dashboard.totalExpenses', lang), value: `₹${totalExpenses}`, icon: Receipt, path: '/expenses' },
+    { label: t('dashboard.milkProcurement', lang), value: `₹${totalProcurement}`, icon: Milk, path: '/procurement' },
+    { label: t('dashboard.staffAdvance', lang), value: `₹${staffAdvance}`, icon: Wallet, path: '/staff' },
   ];
 
   return (
@@ -62,8 +64,12 @@ export default function Dashboard() {
       <AppHeader title={farmName || t('app.name', lang)} />
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-3 gap-2">
-          {stats.map(({ label, value, icon: Icon, negative }) => (
-            <div key={label} className="stat-card flex flex-col gap-2">
+          {stats.map(({ label, value, icon: Icon, negative, path }) => (
+            <button
+              key={label}
+              onClick={() => path && navigate(path)}
+              className="stat-card flex flex-col gap-2 text-left cursor-pointer active:scale-95 transition-transform"
+            >
               <div className="flex items-center justify-between">
                 <span className={`font-number text-lg font-bold ${negative ? 'text-destructive' : 'text-foreground'}`}>
                   {value}
@@ -71,7 +77,7 @@ export default function Dashboard() {
                 <Icon size={18} className="text-stone" />
               </div>
               <span className="text-[10px] text-muted-foreground font-body leading-tight">{label}</span>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -84,8 +90,8 @@ export default function Dashboard() {
               <BarChart data={dailyChartData}>
                 <XAxis dataKey="day" tick={{ fontSize: 9 }} interval={2} />
                 <YAxis tick={{ fontSize: 9 }} width={35} />
-                <Tooltip formatter={(v: number) => [`₹${v}`, 'Sales']} />
-                <Bar dataKey="sales" fill="hsl(122, 46%, 33%)" radius={[2, 2, 0, 0]} />
+                <Tooltip formatter={(v: number) => [`${v} L`, 'Liters']} />
+                <Bar dataKey="liters" fill="hsl(122, 46%, 33%)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
