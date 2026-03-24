@@ -32,8 +32,25 @@ function useFarmQuery<T extends { id: string }>(
       // 1. Read from IndexedDB first (instant)
       const local = await getCollection<T>(table, farmId);
 
-      // 2. If offline, return local data
-      if (!isOnline()) return local;
+      // Apply local filters
+      const applyFilters = (items: T[]): T[] => {
+        if (!opts?.filters || Object.keys(opts.filters).length === 0) return items;
+        return items.filter((item: any) => {
+          for (const [key, value] of Object.entries(opts.filters!)) {
+            if (key.endsWith('_like')) {
+              const realKey = key.replace('_like', '');
+              const prefix = String(value).replace(/%/g, '');
+              if (!item[realKey]?.startsWith(prefix)) return false;
+            } else {
+              if (item[key] !== value) return false;
+            }
+          }
+          return true;
+        });
+      };
+
+      // 2. If offline, return filtered local data
+      if (!isOnline()) return applyFilters(local);
 
       // 3. If online, pull from server in background and update IndexedDB
       try {
