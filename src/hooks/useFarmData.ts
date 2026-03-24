@@ -296,6 +296,9 @@ export function useTransactionMutations() {
       if (isOnline()) flushSyncQueue().catch(console.error);
       return item;
     },
+    onSuccess: () => {
+      TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
   });
 
   const update = useMutation({
@@ -305,6 +308,9 @@ export function useTransactionMutations() {
       await updateItem<DbTransaction>('transactions', farmId, id, patch);
       await addToSyncQueue({ table: 'transactions', action: 'update', data: { id, ...patch } });
       if (isOnline()) flushSyncQueue().catch(console.error);
+    },
+    onSuccess: () => {
+      TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
   });
 
