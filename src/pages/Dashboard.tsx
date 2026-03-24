@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 export default function Dashboard() {
   const navigate = useNavigate();
   const { lang } = useApp();
+  const { farmName } = useAuth();
   const today = getTodayNepali();
   const [date, setDate] = useState<NepaliDate>({ year: today.year, month: today.month, day: today.day });
 
