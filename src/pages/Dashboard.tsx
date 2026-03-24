@@ -89,8 +89,8 @@ export default function Dashboard() {
               <BarChart data={dailyChartData}>
                 <XAxis dataKey="day" tick={{ fontSize: 9 }} interval={2} />
                 <YAxis tick={{ fontSize: 9 }} width={35} />
-                <Tooltip formatter={(v: number) => [`₹${v}`, 'Sales']} />
-                <Bar dataKey="sales" fill="hsl(122, 46%, 33%)" radius={[2, 2, 0, 0]} />
+                <Tooltip formatter={(v: number) => [`${v} L`, 'Liters']} />
+                <Bar dataKey="liters" fill="hsl(122, 46%, 33%)" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
