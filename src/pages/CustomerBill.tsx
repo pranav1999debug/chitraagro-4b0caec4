@@ -46,19 +46,26 @@ export default function CustomerBill() {
     return allPayments.filter(p => p.customer_id === customerId && p.date_key.startsWith(yearMonth));
   }, [allPayments, customerId, yearMonth, customer]);
 
+  const totalMila = useMemo(() => {
+    return customerTransactions.reduce((s, tx) => s + Number(tx.mila || 0), 0);
+  }, [customerTransactions]);
+
   if (!customer) return <div className="p-4 text-center text-muted-foreground">Customer not found</div>;
 
   const totalLiters = dailyRecords.reduce((s, r) => s + r.liters, 0);
   const totalAmount = dailyRecords.reduce((s, r) => s + r.amount, 0);
   const totalPayments = monthPayments.reduce((s, p) => s + Number(p.amount), 0);
   const previousBalance = Number(customer.opening_balance);
-  const finalBalance = previousBalance + totalAmount - totalPayments;
+  const finalBalance = previousBalance + totalAmount - totalPayments - totalMila;
 
   const monthName = getNepaliMonthName(month, lang === 'hi' ? 'np' : 'en');
   const displayFarmName = farmName || 'CHITRA AGRO';
 
   const getBillText = () => {
-    return `Hello ${customer.name},\n\nMonthly Milk Bill Summary\n\nMonth: ${monthName} ${year}\n\nTotal Milk: ${totalLiters} Ltrs\nRate: Rs ${customer.purchase_rate}\nTotal Amount: Rs ${totalAmount}\nPayments Received: Rs ${totalPayments}\nPrevious Balance: Rs ${previousBalance}\nRemaining Balance: Rs ${finalBalance}\n\nThank you\n${displayFarmName}`;
+    let text = `Hello ${customer.name},\n\nMonthly Milk Bill Summary\n\nMonth: ${monthName} ${year}\n\nTotal Milk: ${totalLiters} Ltrs\nRate: Rs ${customer.purchase_rate}\nTotal Amount: Rs ${totalAmount}\n`;
+    if (totalMila > 0) text += `Mila (Daily Received): Rs ${totalMila}\n`;
+    text += `Payments Received: Rs ${totalPayments}\nPrevious Balance: Rs ${previousBalance}\nRemaining Balance: Rs ${finalBalance}\n\nThank you\n${displayFarmName}`;
+    return text;
   };
 
   const handleWhatsApp = () => {
@@ -138,6 +145,9 @@ export default function CustomerBill() {
           <div className="space-y-1 text-sm">
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.totalMilk', lang)}</span><span className="font-number font-semibold">{totalLiters} Ltrs</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.totalAmount', lang)}</span><span className="font-number font-semibold">₹{totalAmount}</span></div>
+            {totalMila > 0 && (
+              <div className="flex justify-between"><span className="text-muted-foreground">Mila (Daily Received)</span><span className="font-number font-semibold text-primary">₹{totalMila}</span></div>
+            )}
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.paymentsReceived', lang)}</span><span className="font-number font-semibold text-primary">₹{totalPayments}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">{t('bill.previousBalance', lang)}</span><span className="font-number font-semibold">₹{previousBalance}</span></div>
             <div className="border-t border-border pt-2 flex justify-between">

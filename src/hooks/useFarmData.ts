@@ -32,8 +32,25 @@ function useFarmQuery<T extends { id: string }>(
       // 1. Read from IndexedDB first (instant)
       const local = await getCollection<T>(table, farmId);
 
-      // 2. If offline, return local data
-      if (!isOnline()) return local;
+      // Apply local filters
+      const applyFilters = (items: T[]): T[] => {
+        if (!opts?.filters || Object.keys(opts.filters).length === 0) return items;
+        return items.filter((item: any) => {
+          for (const [key, value] of Object.entries(opts.filters!)) {
+            if (key.endsWith('_like')) {
+              const realKey = key.replace('_like', '');
+              const prefix = String(value).replace(/%/g, '');
+              if (!item[realKey]?.startsWith(prefix)) return false;
+            } else {
+              if (item[key] !== value) return false;
+            }
+          }
+          return true;
+        });
+      };
+
+      // 2. If offline, return filtered local data
+      if (!isOnline()) return applyFilters(local);
 
       // 3. If online, pull from server in background and update IndexedDB
       try {
@@ -54,10 +71,10 @@ function useFarmQuery<T extends { id: string }>(
         } else {
           serverData = await pullFromServer<T>(table as any, farmId);
         }
-        return serverData;
+        return applyFilters(serverData.length > 0 ? serverData : await getCollection<T>(table, farmId));
       } catch {
-        // Network error — return local data
-        return local;
+        // Network error — return filtered local data
+        return applyFilters(local);
       }
     },
     enabled: opts?.enabled !== undefined ? opts.enabled && !!farmId : !!farmId,
@@ -279,6 +296,9 @@ export function useTransactionMutations() {
       if (isOnline()) flushSyncQueue().catch(console.error);
       return item;
     },
+    onSuccess: () => {
+      TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
+    },
   });
 
   const update = useMutation({
@@ -288,6 +308,9 @@ export function useTransactionMutations() {
       await updateItem<DbTransaction>('transactions', farmId, id, patch);
       await addToSyncQueue({ table: 'transactions', action: 'update', data: { id, ...patch } });
       if (isOnline()) flushSyncQueue().catch(console.error);
+    },
+    onSuccess: () => {
+      TX_KEYS.forEach((k) => qc.invalidateQueries({ queryKey: [k] }));
     },
   });
 
