@@ -228,6 +228,12 @@ export function useAllTransactions() {
   return useFarmQuery<DbTransaction>('all-transactions', 'transactions');
 }
 
+export function useMonthTransactions(yearMonth: string) {
+  return useFarmQuery<DbTransaction>('month-transactions', 'transactions', {
+    filters: { date_key_like: `${yearMonth}%` },
+  });
+}
+
 export function useCustomerMonthTransactions(customerId: string | undefined, yearMonth: string) {
   const { farmId } = useAuth();
 

@@ -5,7 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { t } from '@/lib/i18n';
 import { getTodayNepali, getDaysInMonth, nepaliDateToKey, type NepaliDate } from '@/lib/nepaliDate';
-import { useCustomers, useAllTransactions, useStaff, useAllExpenses, useAllProcurement, usePayments } from '@/hooks/useFarmData';
+import { useCustomers, useAllTransactions, useMonthTransactions, useStaff, useAllExpenses, useAllProcurement, usePayments } from '@/hooks/useFarmData';
 import { Users, UserCog, IndianRupee, Receipt, Milk, Wallet } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useNavigate } from 'react-router-dom';
