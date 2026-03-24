@@ -25,8 +25,7 @@ export default function Dashboard() {
   const { data: allExpenses = [] } = useAllExpenses();
   const { data: allProcurement = [] } = useAllProcurement();
   const { data: allPayments = [] } = usePayments();
-
-  const monthTransactions = allTransactions.filter(tx => tx.date_key.startsWith(yearMonth));
+  const { data: monthTransactions = [] } = useMonthTransactions(yearMonth);
   const monthExpenses = allExpenses.filter(e => e.date_key.startsWith(yearMonth));
   const monthProcurement = allProcurement.filter(p => p.date_key.startsWith(yearMonth));
 
