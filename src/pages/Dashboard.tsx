@@ -63,8 +63,12 @@ export default function Dashboard() {
       <AppHeader title={farmName || t('app.name', lang)} />
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-3 gap-2">
-          {stats.map(({ label, value, icon: Icon, negative }) => (
-            <div key={label} className="stat-card flex flex-col gap-2">
+          {stats.map(({ label, value, icon: Icon, negative, path }) => (
+            <button
+              key={label}
+              onClick={() => path && navigate(path)}
+              className="stat-card flex flex-col gap-2 text-left cursor-pointer active:scale-95 transition-transform"
+            >
               <div className="flex items-center justify-between">
                 <span className={`font-number text-lg font-bold ${negative ? 'text-destructive' : 'text-foreground'}`}>
                   {value}
@@ -72,7 +76,7 @@ export default function Dashboard() {
                 <Icon size={18} className="text-stone" />
               </div>
               <span className="text-[10px] text-muted-foreground font-body leading-tight">{label}</span>
-            </div>
+            </button>
           ))}
         </div>
 
