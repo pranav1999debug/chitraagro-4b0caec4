@@ -44,8 +44,8 @@ export default function Dashboard() {
       const day = i + 1;
       const key = nepaliDateToKey({ year: date.year, month: date.month, day });
       const dayTx = monthTransactions.filter(tx => tx.date_key === key);
-      const sales = dayTx.reduce((s, tx) => s + Number(tx.total), 0);
-      return { day: String(day).padStart(2, '0'), sales };
+      const liters = dayTx.reduce((s, tx) => s + Number(tx.quantity), 0);
+      return { day: String(day).padStart(2, '0'), liters };
     });
   }, [date.year, date.month, daysInMonth, monthTransactions]);
 
